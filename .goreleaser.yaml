@@ -1,0 +1,19 @@
+version: 2
+project_name: llm-mask
+builds:
+  - id: llm-mask
+    main: ./cmd/llm-mask
+    binary: llm-mask
+    env: [CGO_ENABLED=0]
+    goos: [darwin, linux, windows]
+    goarch: [amd64, arm64]
+archives:
+  - id: archive
+    files:
+      - README.md
+      - LICENSE*
+      - skill/llm-mask/**
+checksum:
+  name_template: "checksums.txt"
+sboms:
+  - artifacts: archive

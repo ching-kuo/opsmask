@@ -1,0 +1,40 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  goreleaser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.26.x"
+      - uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser
+          version: latest
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: sigstore/cosign-installer@v4
+      - run: |
+          for artifact in dist/*.{tar.gz,zip} dist/checksums.txt; do
+            [ -f "$artifact" ] || continue
+            cosign sign-blob --yes --output-signature "$artifact.sig" "$artifact"
+          done
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.sig
+      - run: syft . -o spdx-json=sbom.spdx.json
+      - uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: "dist/*"

@@ -1,0 +1,7 @@
+/bin/
+/.omx/
+/.llm-mask/
+/.code-review-graph/
+*.sqlite
+*.sqlite-*
+.DS_Store
