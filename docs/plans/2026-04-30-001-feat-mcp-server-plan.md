@@ -1,7 +1,7 @@
 ---
 title: "feat: Add MCP server for plug-and-play LLM client integration"
 type: feat
-status: active
+status: completed
 date: 2026-04-30
 ---
 
