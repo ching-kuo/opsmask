@@ -182,10 +182,33 @@ func isBusyOrLocked(err error) bool {
 }
 
 func (s *SQLite) List(ctx context.Context, typ string, limit int) ([]Mapping, error) {
+	var out []Mapping
+	err := s.selectMappings(ctx, "type,hmac_full,index_truncated,real_value,first_seen_at", typ, limit, func(rows *sql.Rows) error {
+		var m Mapping
+		var ts int64
+		if err := rows.Scan(&m.Type, &m.HMACFull, &m.Index, &m.RealValue, &ts); err != nil {
+			return err
+		}
+		m.FirstSeenAt = time.Unix(ts, 0)
+		out = append(out, m)
+		return nil
+	})
+	return out, err
+}
+
+// selectMappings runs a `SELECT <projection> FROM mapping [WHERE type=?] ORDER BY
+// first_seen_at DESC LIMIT ?` query and invokes scan on each row. Centralizes
+// the WHERE/LIMIT plumbing so List and ListTokens stay in sync.
+//
+// SECURITY: projection is concatenated into the SQL string verbatim, so
+// callers MUST pass a compile-time literal listing only known schema
+// columns (or fixed SQL functions like length()). Never pass a value
+// derived from user input, config, or other external sources.
+func (s *SQLite) selectMappings(ctx context.Context, projection, typ string, limit int, scan func(*sql.Rows) error) error {
 	if limit <= 0 {
 		limit = 100
 	}
-	q := `SELECT type,hmac_full,index_truncated,real_value,first_seen_at FROM mapping`
+	q := `SELECT ` + projection + ` FROM mapping`
 	args := []any{}
 	if typ != "" {
 		q += ` WHERE type=?`
@@ -195,20 +218,15 @@ func (s *SQLite) List(ctx context.Context, typ string, limit int) ([]Mapping, er
 	args = append(args, limit)
 	rows, err := s.reader.QueryContext(ctx, q, args...)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer rows.Close()
-	var out []Mapping
 	for rows.Next() {
-		var m Mapping
-		var ts int64
-		if err := rows.Scan(&m.Type, &m.HMACFull, &m.Index, &m.RealValue, &ts); err != nil {
-			return nil, err
+		if err := scan(rows); err != nil {
+			return err
 		}
-		m.FirstSeenAt = time.Unix(ts, 0)
-		out = append(out, m)
 	}
-	return out, rows.Err()
+	return rows.Err()
 }
 
 // Stats returns row counts per type in a single read query. Used by the
@@ -237,33 +255,18 @@ func (s *SQLite) Stats(ctx context.Context) (Stats, error) {
 // the server process never holds plaintext on its heap for read-only
 // token-enumeration paths (e.g. the MCP mapping resource).
 func (s *SQLite) ListTokens(ctx context.Context, typ string, limit int) ([]TokenRow, error) {
-	if limit <= 0 {
-		limit = 100
-	}
-	q := `SELECT type, index_truncated, length(real_value), first_seen_at FROM mapping`
-	args := []any{}
-	if typ != "" {
-		q += ` WHERE type=?`
-		args = append(args, typ)
-	}
-	q += ` ORDER BY first_seen_at DESC LIMIT ?`
-	args = append(args, limit)
-	rows, err := s.reader.QueryContext(ctx, q, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
 	var out []TokenRow
-	for rows.Next() {
+	err := s.selectMappings(ctx, "type, index_truncated, length(real_value), first_seen_at", typ, limit, func(rows *sql.Rows) error {
 		var tr TokenRow
 		var ts int64
 		if err := rows.Scan(&tr.Type, &tr.Index, &tr.RealLength, &ts); err != nil {
-			return nil, err
+			return err
 		}
 		tr.FirstSeenAt = time.Unix(ts, 0)
 		out = append(out, tr)
-	}
-	return out, rows.Err()
+		return nil
+	})
+	return out, err
 }
 
 // Prune deletes mapping rows older than the given duration. Callers must pass

@@ -57,6 +57,24 @@
   logged only to the server's stderr — never via MCP, so it cannot
   serve as an attack-success oracle.
 
+### Performance
+
+- **Engine hot path: ~+42% throughput, ~-17% memory** on the
+  `BenchmarkMixedSecretsCorpus` corpus (Apple M1 Max, `-benchtime=1x`).
+  Dropped the per-chunk `string(b)` copy in `detect.FindMatches`,
+  switched keyword scans to `bytes.Index` over precomputed `[][]byte`
+  keys, and added a `bytes.Contains` fast-path to `InertEscape` so the
+  token regex is skipped on chunks without an `opsmask:` sentinel.
+  See BENCHMARKS.md for current numbers and methodology.
+- **`denyWriter` (used by `opsmask mask`) compiles user deny-list
+  regexes once at construction** instead of recompiling on every
+  `Write`. Reuses an internal scratch buffer for the sliding-window
+  scan, avoiding a fresh allocation per chunk. After a canary hit is
+  recorded, subsequent writes skip the scan path entirely.
+- **`store.SQLite.List` and `ListTokens` share one `selectMappings`
+  helper** so the WHERE/ORDER/LIMIT plumbing is single-sourced. No
+  external API change.
+
 ### Changed
 
 - **Race fix in `internal/exec.Run`.** Replaced `cmd.StdoutPipe`/

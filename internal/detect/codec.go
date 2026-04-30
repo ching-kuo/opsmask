@@ -1,9 +1,15 @@
 package detect
 
 import (
+	"bytes"
 	"encoding/base64"
 	"regexp"
 )
+
+// tokenSentinel matches the byte signature shared by both token forms
+// (⟪opsmask:…⟫ and [[opsmask:…]]). The fast-path bypass in InertEscape
+// uses it to skip the regex when no token is present in the chunk.
+var tokenSentinel = []byte("opsmask:")
 
 var (
 	tokenRe = regexp.MustCompile(`(?:⟪opsmask:([a-z0-9_]+):([0-9a-f]{16})⟫)|(?:\[\[opsmask:([a-z0-9_]+):([0-9a-f]{16})\]\])`)
@@ -33,6 +39,9 @@ func ParseToken(s []byte) (Token, bool) {
 func TokenRegexp() *regexp.Regexp { return tokenRe }
 
 func InertEscape(in []byte) []byte {
+	if !bytes.Contains(in, tokenSentinel) {
+		return in
+	}
 	return tokenRe.ReplaceAllFunc(in, func(m []byte) []byte {
 		enc := base64.RawURLEncoding.EncodeToString(m)
 		return []byte("[OPSMASK_ESCAPED_SENTINEL:" + enc + "]")

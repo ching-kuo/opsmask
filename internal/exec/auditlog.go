@@ -128,6 +128,12 @@ func auditDir() (string, error) {
 // or os.UserConfigDir() + "/opsmask"), creates it with mode 0700 if
 // missing, and rejects pre-existing directories whose permissions are
 // wider than 0700. Used by both exec.log and mcp_calls.jsonl writers.
+//
+// The audit directory holds append-only JSONL logs (no cryptographic
+// material), so this intentionally does NOT enforce uid ownership the
+// way store.EnsurePrivateDir does — operators may legitimately share
+// the audit dir across uid boundaries (root-initialized dirs, CI
+// service accounts) as long as the mode bits remain private.
 func EnsureAuditDir() (string, error) {
 	dir, err := auditDir()
 	if err != nil {

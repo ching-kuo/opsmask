@@ -50,6 +50,27 @@ func TestProcessRespectsCancelledContext(t *testing.T) {
 	}
 }
 
+// pacedReader delivers data in small windows and watches ctx so cancellation
+// is event-driven rather than wall-clock racing the engine. Each Read either
+// returns ctx.Err() (when canceled) or yields up to 1 KiB after a brief pace
+// delay; this keeps the engine demonstrably mid-stream when cancel fires.
+type pacedReader struct {
+	ctx context.Context
+	r   io.Reader
+}
+
+func (p *pacedReader) Read(buf []byte) (int, error) {
+	select {
+	case <-p.ctx.Done():
+		return 0, p.ctx.Err()
+	case <-time.After(5 * time.Millisecond):
+	}
+	if len(buf) > 1024 {
+		buf = buf[:1024]
+	}
+	return p.r.Read(buf)
+}
+
 func TestProcessCancelMidStream(t *testing.T) {
 	rules, err := detect.BuiltinRules()
 	if err != nil {
@@ -57,10 +78,8 @@ func TestProcessCancelMidStream(t *testing.T) {
 	}
 	alloc := newTestAllocator(t)
 
-	// 2 MiB input drives the engine through multiple chunker iterations.
-	// Cancel after a short delay; assert we return within a generous bound.
-	in := strings.NewReader(strings.Repeat("noise ", 1<<18))
 	ctx, cancel := context.WithCancel(context.Background())
+	in := &pacedReader{ctx: ctx, r: strings.NewReader(strings.Repeat("noise ", 1<<18))}
 	go func() {
 		time.Sleep(20 * time.Millisecond)
 		cancel()

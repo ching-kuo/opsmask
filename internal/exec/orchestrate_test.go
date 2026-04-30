@@ -57,7 +57,7 @@ func TestOrchestrateUntrusted(t *testing.T) {
 	rt := newOrchestrateRuntime(t, config.ExecConfig{Enabled: true, Scope: config.ScopeReadOnly}, true)
 	res, err := maskexec.Orchestrate(context.Background(), rt, []string{"kubectl", "get", "pods"}, maskexec.OrchestrateOptions{
 		Source: maskexec.SourceCLI,
-		Stdout: io_discard(), Stderr: io_discard(),
+		Stdout: discardBuffer(), Stderr: discardBuffer(),
 	})
 	if !errors.Is(err, maskexec.ErrUntrusted) {
 		t.Fatalf("err = %v, want ErrUntrusted", err)
@@ -73,7 +73,7 @@ func TestOrchestrateDisabled(t *testing.T) {
 	rt := newOrchestrateRuntime(t, config.ExecConfig{Enabled: false, Scope: config.ScopeReadOnly}, false)
 	_, err := maskexec.Orchestrate(context.Background(), rt, []string{"kubectl", "get", "pods"}, maskexec.OrchestrateOptions{
 		Source: maskexec.SourceCLI,
-		Stdout: io_discard(), Stderr: io_discard(),
+		Stdout: discardBuffer(), Stderr: discardBuffer(),
 	})
 	if !errors.Is(err, maskexec.ErrDisabled) {
 		t.Fatalf("err = %v, want ErrDisabled", err)
@@ -87,7 +87,7 @@ func TestOrchestrateScopeOpenRefusedForMCP(t *testing.T) {
 	rt := newOrchestrateRuntime(t, cfg, false)
 	_, err := maskexec.Orchestrate(context.Background(), rt, []string{"echo", "hi"}, maskexec.OrchestrateOptions{
 		Source: maskexec.SourceMCP, RefuseScopeOpen: true,
-		Stdout: io_discard(), Stderr: io_discard(),
+		Stdout: discardBuffer(), Stderr: discardBuffer(),
 	})
 	if !errors.Is(err, maskexec.ErrScopeOpen) {
 		t.Fatalf("err = %v, want ErrScopeOpen", err)
@@ -144,7 +144,7 @@ func TestOrchestrateInvalidTimeout(t *testing.T) {
 	rt := newOrchestrateRuntime(t, cfg, false)
 	_, err := maskexec.Orchestrate(context.Background(), rt, []string{"echo", "hi"}, maskexec.OrchestrateOptions{
 		Source: maskexec.SourceCLI, Timeout: "not-a-duration",
-		Stdout: io_discard(), Stderr: io_discard(),
+		Stdout: discardBuffer(), Stderr: discardBuffer(),
 	})
 	if !errors.Is(err, maskexec.ErrTimeoutParse) {
 		t.Fatalf("err = %v, want ErrTimeoutParse", err)
@@ -157,7 +157,7 @@ func TestOrchestratePolicyDenied(t *testing.T) {
 	rt := newOrchestrateRuntime(t, cfg, false)
 	_, err := maskexec.Orchestrate(context.Background(), rt, []string{"cat", "/etc/passwd"}, maskexec.OrchestrateOptions{
 		Source: maskexec.SourceCLI,
-		Stdout: io_discard(), Stderr: io_discard(),
+		Stdout: discardBuffer(), Stderr: discardBuffer(),
 	})
 	if !errors.Is(err, maskexec.ErrPolicyDenied) {
 		t.Fatalf("err = %v, want ErrPolicyDenied", err)
@@ -170,7 +170,7 @@ func TestOrchestrateInvalidSource(t *testing.T) {
 	rt := newOrchestrateRuntime(t, cfg, false)
 	_, err := maskexec.Orchestrate(context.Background(), rt, []string{"echo"}, maskexec.OrchestrateOptions{
 		Source: "evil",
-		Stdout: io_discard(), Stderr: io_discard(),
+		Stdout: discardBuffer(), Stderr: discardBuffer(),
 	})
 	if err == nil || !strings.Contains(err.Error(), "invalid source") {
 		t.Fatalf("expected invalid-source error, got %v", err)
@@ -233,7 +233,10 @@ func readAuditRecords(t *testing.T, dir string) []maskexec.Record {
 	return out
 }
 
-func io_discard() *bytes.Buffer { return &bytes.Buffer{} }
+// discardBuffer returns a fresh writable buffer. Tests use it where they
+// only need a non-nil io.Writer for Orchestrate's Stdout/Stderr; the
+// captured bytes are intentionally ignored.
+func discardBuffer() *bytes.Buffer { return &bytes.Buffer{} }
 
 func assertAuditClass(t *testing.T, dir, want string) {
 	t.Helper()

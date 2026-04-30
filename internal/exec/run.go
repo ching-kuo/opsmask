@@ -140,7 +140,7 @@ func mergeStats(a, b engine.Stats) engine.Stats {
 	return out
 }
 
-func waitForChild(ctx context.Context, cmd *osexec.Cmd, waitCh chan error, timeout, grace time.Duration) (error, bool) {
+func waitForChild(ctx context.Context, cmd *osexec.Cmd, waitCh chan error, timeout, grace time.Duration) (waitErr error, timedOut bool) {
 	var timerC <-chan time.Time
 	if timeout > 0 {
 		t := time.NewTimer(timeout)

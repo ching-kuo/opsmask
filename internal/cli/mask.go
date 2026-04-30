@@ -92,41 +92,65 @@ func parseSize(s string) (int, error) {
 	return n * mul, nil
 }
 
-func denyHit(b []byte, deny []config.DenyEntry) string {
+// denyEntry is the runtime form of config.DenyEntry: the regex is compiled
+// once at construction so denyHit avoids a Compile call per Write. A regex
+// that fails to compile is treated as a no-op (matching the previous silent-
+// skip behavior) — config validation is the right place to surface bad
+// patterns to the user.
+type denyEntry struct {
+	name    string
+	literal []byte
+	pattern *regexp.Regexp
+}
+
+func denyHit(b []byte, deny []denyEntry) string {
 	for _, d := range deny {
-		if d.Literal != "" && bytes.Contains(b, []byte(d.Literal)) {
-			return d.Name
+		if d.literal != nil && bytes.Contains(b, d.literal) {
+			return d.name
 		}
-		if d.Pattern != "" {
-			if re, err := regexp.Compile(d.Pattern); err == nil && re.Match(b) {
-				return d.Name
-			}
+		if d.pattern != nil && d.pattern.Match(b) {
+			return d.name
 		}
 	}
 	return ""
 }
 
 type denyWriter struct {
-	w     io.Writer
-	deny  []config.DenyEntry
-	hit   string
-	tail  []byte
-	limit int
+	w       io.Writer
+	deny    []denyEntry
+	hit     string
+	tail    []byte
+	scratch []byte
+	limit   int
 }
 
-func newDenyWriter(w io.Writer, deny []config.DenyEntry) *denyWriter {
+func newDenyWriter(w io.Writer, src []config.DenyEntry) *denyWriter {
+	deny := make([]denyEntry, 0, len(src))
+	for _, e := range src {
+		entry := denyEntry{name: e.Name}
+		if e.Literal != "" {
+			entry.literal = []byte(e.Literal)
+		}
+		if e.Pattern != "" {
+			if re, err := regexp.Compile(e.Pattern); err == nil {
+				entry.pattern = re
+			}
+		}
+		deny = append(deny, entry)
+	}
 	return &denyWriter{w: w, deny: deny, limit: 8192}
 }
 
 func (d *denyWriter) Write(p []byte) (int, error) {
-	scan := append(append([]byte(nil), d.tail...), p...)
 	if d.hit == "" {
-		d.hit = denyHit(scan, d.deny)
-	}
-	if len(scan) > d.limit {
-		d.tail = append(d.tail[:0], scan[len(scan)-d.limit:]...)
-	} else {
-		d.tail = append(d.tail[:0], scan...)
+		d.scratch = append(d.scratch[:0], d.tail...)
+		d.scratch = append(d.scratch, p...)
+		d.hit = denyHit(d.scratch, d.deny)
+		if len(d.scratch) > d.limit {
+			d.tail = append(d.tail[:0], d.scratch[len(d.scratch)-d.limit:]...)
+		} else {
+			d.tail = append(d.tail[:0], d.scratch...)
+		}
 	}
 	return d.w.Write(p)
 }

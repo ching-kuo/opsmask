@@ -196,9 +196,9 @@ func execErrorResult(out ExecOutput, err error) *mcp.CallToolResult {
 	}
 }
 
-func truncateString(s string, cap int) string {
-	if cap <= 0 || len(s) <= cap {
+func truncateString(s string, limit int) string {
+	if limit <= 0 || len(s) <= limit {
 		return s
 	}
-	return s[:cap]
+	return s[:limit]
 }

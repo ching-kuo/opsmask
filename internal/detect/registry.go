@@ -1,6 +1,7 @@
 package detect
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"math"
@@ -16,7 +17,7 @@ type Rule struct {
 	Name, Type   string
 	Policy       policy.Policy
 	Regex        *regexp.Regexp
-	Keywords     []string
+	Keywords     [][]byte
 	MaxMatchSpan int
 	SubMatch     int // if >0, use this capture group index as the match bounds
 	MinEntropy   float64
@@ -37,7 +38,14 @@ func BuiltinRules() ([]Rule, error) {
 		if err != nil {
 			return nil, err
 		}
-		r := Rule{Name: s.Name, Type: s.Type, Policy: s.Policy, Regex: re, Keywords: s.Keywords, MaxMatchSpan: s.MaxMatchSpan, SubMatch: s.SubMatch, MinEntropy: s.MinEntropy}
+		var keywords [][]byte
+		if len(s.Keywords) > 0 {
+			keywords = make([][]byte, len(s.Keywords))
+			for i, k := range s.Keywords {
+				keywords[i] = []byte(k)
+			}
+		}
+		r := Rule{Name: s.Name, Type: s.Type, Policy: s.Policy, Regex: re, Keywords: keywords, MaxMatchSpan: s.MaxMatchSpan, SubMatch: s.SubMatch, MinEntropy: s.MinEntropy}
 		if s.Type == "jwt" {
 			r.Check = validJWT
 		}
@@ -48,9 +56,8 @@ func BuiltinRules() ([]Rule, error) {
 
 func FindMatches(rules []Rule, b []byte) []Match {
 	var ms []Match
-	text := string(b)
 	for _, r := range rules {
-		for _, loc := range ruleFindAll(r, b, text) {
+		for _, loc := range ruleFindAll(r, b) {
 			if loc[1] <= loc[0] || loc[1]-loc[0] > maxSpan(r.MaxMatchSpan) {
 				continue
 			}
@@ -67,11 +74,11 @@ func FindMatches(rules []Rule, b []byte) []Match {
 	return nonOverlapping(ms)
 }
 
-func ruleFindAll(r Rule, b []byte, text string) [][2]int {
+func ruleFindAll(r Rule, b []byte) [][2]int {
 	if r.SubMatch > 0 {
 		// grp: flat index into FindAllSubmatchIndex result ([full_start,full_end,g1_start,g1_end,…])
 		grp := r.SubMatch * 2
-		return scanWindows(r, b, text, func(slice []byte, offset int) [][2]int {
+		return scanWindows(r, b, func(slice []byte, offset int) [][2]int {
 			all := r.Regex.FindAllSubmatchIndex(slice, -1)
 			out := make([][2]int, 0, len(all))
 			for _, m := range all {
@@ -83,17 +90,17 @@ func ruleFindAll(r Rule, b []byte, text string) [][2]int {
 			return out
 		})
 	}
-	return scanWindows(r, b, text, func(slice []byte, offset int) [][2]int {
+	return scanWindows(r, b, func(slice []byte, offset int) [][2]int {
 		return regexLocations(r.Regex.FindAllIndex(slice, -1), offset)
 	})
 }
 
-func scanWindows(r Rule, b []byte, text string, scan func([]byte, int) [][2]int) [][2]int {
+func scanWindows(r Rule, b []byte, scan func([]byte, int) [][2]int) [][2]int {
 	if len(r.Keywords) == 0 {
 		return scan(b, 0)
 	}
 	var out [][2]int
-	for _, rg := range keywordRanges(text, r.Keywords, maxSpan(r.MaxMatchSpan)) {
+	for _, rg := range keywordRanges(b, r.Keywords, maxSpan(r.MaxMatchSpan)) {
 		out = append(out, scan(b[rg[0]:rg[1]], rg[0])...)
 	}
 	return out
@@ -107,7 +114,7 @@ func regexLocations(locs [][]int, offset int) [][2]int {
 	return out
 }
 
-func keywordRanges(text string, keys []string, span int) [][2]int {
+func keywordRanges(b []byte, keys [][]byte, span int) [][2]int {
 	seen := map[[2]int]bool{}
 	var ranges [][2]int
 	window := span
@@ -117,7 +124,7 @@ func keywordRanges(text string, keys []string, span int) [][2]int {
 	for _, k := range keys {
 		start := 0
 		for {
-			i := strings.Index(text[start:], k)
+			i := bytes.Index(b[start:], k)
 			if i < 0 {
 				break
 			}
@@ -126,8 +133,8 @@ func keywordRanges(text string, keys []string, span int) [][2]int {
 			if a < 0 {
 				a = 0
 			}
-			if z > len(text) {
-				z = len(text)
+			if z > len(b) {
+				z = len(b)
 			}
 			rg := [2]int{a, z}
 			if !seen[rg] {
