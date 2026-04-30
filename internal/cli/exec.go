@@ -1,11 +1,11 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/ching-kuo/opsmask/internal/config"
 	maskexec "github.com/ching-kuo/opsmask/internal/exec"
@@ -29,86 +29,70 @@ func newExec(opts *Options) *cobra.Command {
 				return CodeError{Code: 125, Err: err}
 			}
 			defer rt.Close()
-			// Preflight the audit log before doing anything else so we never run a child
-			// process that we cannot record. Without an audit trail the safety contract
-			// of `exec` is broken; fail closed instead.
-			if err := maskexec.Preflight(); err != nil {
-				fmt.Fprintf(cmd.ErrOrStderr(), "exec refused: audit log unwritable: %v\n", err)
-				return CodeError{Code: 125}
-			}
-			cfg := rt.loaded.ProjectExec
 			cwd, _ := os.Getwd()
-			rec := maskexec.Record{
-				Ts:         time.Now(),
-				Cwd:        cwd,
-				Argv:       append([]string(nil), args...),
-				Scope:      string(cfg.Scope),
-				Executable: args[0],
-			}
-			defer func() {
-				if werr := maskexec.WriteRecord(rec); werr != nil {
-					fmt.Fprintf(cmd.ErrOrStderr(), "warning: audit log write failed: %v\n", werr)
-				}
-			}()
+			cfg := rt.Loaded.ProjectExec
 
-			fail := func(code int, class string) error {
-				rec.ExitCode = code
-				rec.ErrorClass = class
-				return CodeError{Code: code}
-			}
-			if rt.loaded.Untrusted {
-				fmt.Fprintln(cmd.ErrOrStderr(), "exec disabled: project .opsmask/config.yaml is untrusted; run `opsmask config trust`")
-				return fail(125, "untrusted")
-			}
-			if !cfg.Enabled {
-				fmt.Fprintln(cmd.ErrOrStderr(), "exec disabled in this project (set exec.enabled: true in trusted .opsmask/config.yaml)")
-				return fail(125, "disabled")
-			}
-			d := cfg.DefaultTimeout
-			if timeout != "" {
-				d, err = time.ParseDuration(timeout)
-				if err != nil {
-					fmt.Fprintf(cmd.ErrOrStderr(), "invalid --timeout %q: %v\n", timeout, err)
-					return fail(125, "wrapper")
-				}
-			}
-			resolved, err := maskexec.Resolve(cmd.Context(), args, func(typ, idx string) ([]byte, bool, error) {
-				return rt.store.Lookup(cmd.Context(), typ, idx)
-			})
-			if err != nil {
-				fmt.Fprintln(cmd.ErrOrStderr(), "resolution failed")
-				rec.DenyMatch = err.Error()
-				return fail(125, "resolve")
-			}
-			decision := maskexec.EvaluatePolicy(resolved, cfg)
-			rec.AllowMatch = decision.AllowMatch
-			rec.DenyMatch = decision.DenyMatch
-			if !decision.Allowed {
-				fmt.Fprintf(cmd.ErrOrStderr(), "exec rejected: %s\n", decision.Reason)
-				return fail(125, decision.ErrorClass)
-			}
-			env := maskexec.BuildEnv(cfg.Scope, cfg, nil)
-			rec.EnvAllowCount = len(env.Env)
-			rec.EnvDenyCount = env.DenyCount
-			rec.DenyOptOut = cfg.DenyOptOut
 			if cfg.Scope == config.ScopeFreeform {
 				fmt.Fprintf(cmd.ErrOrStderr(), "opsmask exec: scope=freeform; allow-list=%d entries; deny-opt-outs=%d\n", len(cfg.Allow), len(cfg.DenyOptOut))
 			}
+
 			runCtx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
-			run := maskexec.Run(runCtx, resolved, maskexec.RunOptions{
-				Env: env.Env, Stdin: os.Stdin, Stdout: cmd.OutOrStdout(), Stderr: cmd.ErrOrStderr(),
-				Timeout: d, Rules: rt.rules, Alloc: rt.alloc,
+
+			runtime := maskexec.Runtime{
+				Store:     rt.Store,
+				Alloc:     rt.Alloc,
+				Rules:     rt.Rules,
+				Untrusted: rt.Loaded.Untrusted,
+				Cfg:       cfg,
+			}
+			result, err := maskexec.Orchestrate(runCtx, runtime, args, maskexec.OrchestrateOptions{
+				Source:  maskexec.SourceCLI,
+				Cwd:     cwd,
+				Timeout: timeout,
+				// CLI does not refuse scope=freeform+empty-allow; only the MCP
+				// path applies that tightening. Local users who wrote a trusted
+				// freeform config knew what they were doing.
+				RefuseScopeOpen: false,
+				Stdin:           os.Stdin,
+				Stdout:          cmd.OutOrStdout(),
+				Stderr:          cmd.ErrOrStderr(),
 			})
-			rec.ExitCode = run.ExitCode
-			rec.DurationMs = run.Duration.Milliseconds()
-			rec.ErrorClass = run.ErrorClass
-			if run.ExitCode != 0 {
-				return CodeError{Code: run.ExitCode}
+			if err != nil {
+				printOrchestrateError(cmd, err)
+				if errors.Is(err, maskexec.ErrAuditUnwritable) {
+					return CodeError{Code: 125}
+				}
+				return CodeError{Code: 125}
+			}
+			if result.ExitCode != 0 {
+				return CodeError{Code: result.ExitCode}
 			}
 			return nil
 		},
 	}
 	cmd.Flags().StringVar(&timeout, "timeout", "", "maximum child runtime (for example 30s, 2m)")
 	return cmd
+}
+
+func printOrchestrateError(cmd *cobra.Command, err error) {
+	stderr := cmd.ErrOrStderr()
+	switch {
+	case errors.Is(err, maskexec.ErrAuditUnwritable):
+		fmt.Fprintf(stderr, "exec refused: audit log unwritable: %v\n", err)
+	case errors.Is(err, maskexec.ErrUntrusted):
+		fmt.Fprintln(stderr, "exec disabled: project .opsmask/config.yaml is untrusted; run `opsmask config trust`")
+	case errors.Is(err, maskexec.ErrDisabled):
+		fmt.Fprintln(stderr, "exec disabled in this project (set exec.enabled: true in trusted .opsmask/config.yaml)")
+	case errors.Is(err, maskexec.ErrTimeoutParse):
+		fmt.Fprintf(stderr, "%v\n", err)
+	case errors.Is(err, maskexec.ErrResolve):
+		fmt.Fprintln(stderr, "resolution failed")
+	case errors.Is(err, maskexec.ErrPolicyDenied):
+		fmt.Fprintf(stderr, "exec rejected: %v\n", err)
+	case errors.Is(err, maskexec.ErrScopeOpen):
+		fmt.Fprintln(stderr, "exec refused: scope=freeform with empty allow-list (MCP)")
+	default:
+		fmt.Fprintf(stderr, "exec error: %v\n", err)
+	}
 }

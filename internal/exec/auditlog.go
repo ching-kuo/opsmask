@@ -13,8 +13,17 @@ import (
 
 const auditMaxLine = 4095
 
+// Sources accepted by WriteRecord. Records with any other Source value are
+// rejected at write time so call-site bypass via bare composite-literal
+// construction surfaces as an error rather than producing a malformed line.
+const (
+	SourceCLI = "cli"
+	SourceMCP = "mcp"
+)
+
 type Record struct {
 	Ts            time.Time                `json:"ts"`
+	Source        string                   `json:"source,omitempty"`
 	Cwd           string                   `json:"cwd,omitempty"`
 	Executable    string                   `json:"executable,omitempty"`
 	Argv          []string                 `json:"argv,omitempty"`
@@ -30,7 +39,27 @@ type Record struct {
 	Truncated     bool                     `json:"truncated,omitempty"`
 }
 
+// NewRecord is the sanctioned constructor. Callers MUST use it instead of
+// composite-literal construction so the Source field is set from the start
+// and WriteRecord's runtime check passes.
+func NewRecord(source string) Record {
+	return Record{Ts: time.Now(), Source: source}
+}
+
+// NormalizeSource maps an empty Source string read from a pre-MCP audit log
+// to the canonical "cli" value. This is used only by readers; WriteRecord
+// rejects empty Source values on write.
+func NormalizeSource(s string) string {
+	if s == "" {
+		return SourceCLI
+	}
+	return s
+}
+
 func WriteRecord(rec Record) error {
+	if rec.Source != SourceCLI && rec.Source != SourceMCP {
+		return fmt.Errorf("audit: invalid Record.Source %q (must be %q or %q); use NewRecord", rec.Source, SourceCLI, SourceMCP)
+	}
 	if rec.Ts.IsZero() {
 		rec.Ts = time.Now()
 	}
@@ -59,15 +88,9 @@ func Preflight() error {
 }
 
 func openAuditLog() (*os.File, string, error) {
-	dir, err := auditDir()
+	dir, err := EnsureAuditDir()
 	if err != nil {
 		return nil, "", err
-	}
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return nil, "", err
-	}
-	if info, err := os.Stat(dir); err == nil && info.Mode().Perm()&0o077 != 0 {
-		return nil, "", fmt.Errorf("%s must not be group/world accessible", dir)
 	}
 	path := filepath.Join(dir, "exec.log")
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY|syscall.O_CLOEXEC, 0o600)
@@ -90,6 +113,31 @@ func auditDir() (string, error) {
 		return "", err
 	}
 	return filepath.Join(base, "opsmask"), nil
+}
+
+// AuditDir returns the directory where exec.log and mcp_calls.jsonl are
+// stored. Honors $OPSMASK_AUDIT_DIR if set, otherwise os.UserConfigDir() +
+// "/opsmask". Exported so internal/mcpsrv can open mcp_calls.jsonl in the
+// same directory without duplicating the resolver.
+func AuditDir() (string, error) {
+	return auditDir()
+}
+
+// EnsureAuditDir resolves AuditDir, creates it with mode 0700 if missing,
+// and rejects pre-existing directories whose permissions are wider than
+// 0700. Used by both exec.log and mcp_calls.jsonl writers.
+func EnsureAuditDir() (string, error) {
+	dir, err := auditDir()
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	if info, err := os.Stat(dir); err == nil && info.Mode().Perm()&0o077 != 0 {
+		return "", fmt.Errorf("%s must not be group/world accessible", dir)
+	}
+	return dir, nil
 }
 
 func encodeRecord(rec Record) ([]byte, error) {
@@ -126,5 +174,5 @@ func encodeRecord(rec Record) ([]byte, error) {
 	if best != nil {
 		return best, nil
 	}
-	return json.Marshal(Record{Ts: rec.Ts, ErrorClass: "audit_truncate_oversize", Truncated: true})
+	return json.Marshal(Record{Ts: rec.Ts, Source: rec.Source, ErrorClass: "audit_truncate_oversize", Truncated: true})
 }

@@ -57,12 +57,12 @@ func NewRoot(version string) *cobra.Command {
 	root.PersistentFlags().StringVar(&opts.Config, "config", "", "config path override")
 	root.PersistentFlags().StringVar(&opts.Mapping, "mapping", "", "mapping SQLite path override")
 	root.PersistentFlags().BoolVar(&opts.Verbose, "verbose", false, "verbose diagnostics")
-	root.AddCommand(newMask(opts), newUnmask(opts), newExec(opts), newInit(), newMapping(opts), newConfig())
+	root.AddCommand(newMask(opts), newUnmask(opts), newExec(opts), newInit(), newMapping(opts), newConfig(), newMcp(opts))
 	return root
 }
 
 func RewriteArgs(args []string) []string {
-	known := map[string]bool{"mask": true, "unmask": true, "exec": true, "init": true, "mapping": true, "config": true, "completion": true, "help": true}
+	known := map[string]bool{"mask": true, "unmask": true, "exec": true, "init": true, "mapping": true, "config": true, "mcp": true, "completion": true, "help": true}
 	if len(args) == 0 {
 		return []string{"mask"}
 	}

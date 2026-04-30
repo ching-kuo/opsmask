@@ -211,6 +211,27 @@ func (s *SQLite) List(ctx context.Context, typ string, limit int) ([]Mapping, er
 	return out, rows.Err()
 }
 
+// Stats returns row counts per type in a single read query. Used by the
+// MCP `mapping_stats` tool and any future observability surface.
+func (s *SQLite) Stats(ctx context.Context) (Stats, error) {
+	rows, err := s.reader.QueryContext(ctx, `SELECT type, COUNT(*) FROM mapping GROUP BY type`)
+	if err != nil {
+		return Stats{}, err
+	}
+	defer rows.Close()
+	out := Stats{ByType: map[string]int{}}
+	for rows.Next() {
+		var typ string
+		var n int
+		if err := rows.Scan(&typ, &n); err != nil {
+			return Stats{}, err
+		}
+		out.ByType[typ] = n
+		out.Total += n
+	}
+	return out, rows.Err()
+}
+
 // Prune deletes mapping rows older than the given duration. Callers must pass
 // a positive duration; a non-positive value is rejected to avoid wiping the
 // whole store by accident.

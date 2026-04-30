@@ -30,6 +30,12 @@ type RunResult struct {
 	ExitCode   int
 	Duration   time.Duration
 	ErrorClass string
+	// Masking stats aggregated across stdout and stderr after maskStream
+	// drains both pipes. CLI exec ignores these; the MCP exec tool surfaces
+	// them in its result so the agent can see how much was masked.
+	Masked    int
+	Destroyed int
+	ByType    map[string]int
 }
 
 func Run(ctx context.Context, argv []string, opts RunOptions) RunResult {
@@ -60,8 +66,9 @@ func Run(ctx context.Context, argv []string, opts RunOptions) RunResult {
 	}
 	var streamWg sync.WaitGroup
 	streamWg.Add(2)
-	go func() { defer streamWg.Done(); maskStream(ctx, stdout, opts.Stdout, opts) }()
-	go func() { defer streamWg.Done(); maskStream(ctx, stderr, opts.Stderr, opts) }()
+	var stdoutStats, stderrStats engine.Stats
+	go func() { defer streamWg.Done(); stdoutStats = maskStream(ctx, stdout, opts.Stdout, opts) }()
+	go func() { defer streamWg.Done(); stderrStats = maskStream(ctx, stderr, opts.Stderr, opts) }()
 
 	waitCh := make(chan error, 1)
 	go func() { waitCh <- cmd.Wait() }()
@@ -69,8 +76,9 @@ func Run(ctx context.Context, argv []string, opts RunOptions) RunResult {
 	waitErr, timedOut := waitForChild(ctx, cmd, waitCh, opts.Timeout, opts.KillGrace)
 	streamWg.Wait()
 
+	merged := mergeStats(stdoutStats, stderrStats)
 	if timedOut {
-		return RunResult{ExitCode: 124, Duration: time.Since(start), ErrorClass: "timeout"}
+		return RunResult{ExitCode: 124, Duration: time.Since(start), ErrorClass: "timeout", Masked: merged.Masked, Destroyed: merged.Destroyed, ByType: merged.ByType}
 	}
 	code := 0
 	class := ""
@@ -86,7 +94,18 @@ func Run(ctx context.Context, argv []string, opts RunOptions) RunResult {
 			class = "wrapper"
 		}
 	}
-	return RunResult{ExitCode: code, Duration: time.Since(start), ErrorClass: class}
+	return RunResult{ExitCode: code, Duration: time.Since(start), ErrorClass: class, Masked: merged.Masked, Destroyed: merged.Destroyed, ByType: merged.ByType}
+}
+
+func mergeStats(a, b engine.Stats) engine.Stats {
+	out := engine.Stats{Masked: a.Masked + b.Masked, Destroyed: a.Destroyed + b.Destroyed, ByType: map[string]int{}}
+	for k, v := range a.ByType {
+		out.ByType[k] += v
+	}
+	for k, v := range b.ByType {
+		out.ByType[k] += v
+	}
+	return out
 }
 
 func waitForChild(ctx context.Context, cmd *osexec.Cmd, waitCh chan error, timeout, grace time.Duration) (error, bool) {
@@ -116,14 +135,15 @@ func waitForChild(ctx context.Context, cmd *osexec.Cmd, waitCh chan error, timeo
 
 // Allocator is shared across stdout and stderr goroutines; pseudo.Allocator's
 // mutex guarantees safe concurrent CommitPlans.
-func maskStream(ctx context.Context, src io.Reader, dst io.Writer, opts RunOptions) {
+func maskStream(ctx context.Context, src io.Reader, dst io.Writer, opts RunOptions) engine.Stats {
 	if dst == nil {
 		_, _ = io.Copy(io.Discard, src)
-		return
+		return engine.Stats{}
 	}
 	if len(opts.Rules) == 0 || opts.Alloc == nil {
 		_, _ = io.Copy(dst, src)
-		return
+		return engine.Stats{}
 	}
-	_, _ = engine.Process(ctx, src, dst, opts.Rules, opts.Alloc, engine.Options{MaxLine: maskio.DefaultMaxLine})
+	stats, _ := engine.Process(ctx, src, dst, opts.Rules, opts.Alloc, engine.Options{MaxLine: maskio.DefaultMaxLine})
+	return stats
 }

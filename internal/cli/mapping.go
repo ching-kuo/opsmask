@@ -32,7 +32,7 @@ func newMappingList(opts *Options) *cobra.Command {
 				return err
 			}
 			defer rt.Close()
-			rows, err := rt.store.List(context.Background(), typ, limit)
+			rows, err := rt.Store.List(context.Background(), typ, limit)
 			if err != nil {
 				return err
 			}
@@ -73,7 +73,7 @@ func newMappingPrune(opts *Options) *cobra.Command {
 				return err
 			}
 			defer rt.Close()
-			n, err := rt.store.Prune(context.Background(), typ, d)
+			n, err := rt.Store.Prune(context.Background(), typ, d)
 			if err != nil {
 				return err
 			}

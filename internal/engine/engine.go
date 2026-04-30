@@ -51,6 +51,11 @@ func Process(ctx context.Context, r io.Reader, w io.Writer, rules []detect.Rule,
 	}
 
 	for !tokenFormChosen {
+		select {
+		case <-ctx.Done():
+			return stats, ctx.Err()
+		default:
+		}
 		chunk, err := ch.Next()
 		if err == io.EOF {
 			tokenASCII = isStrictASCIIPrefix(pending)
@@ -69,6 +74,11 @@ func Process(ctx context.Context, r io.Reader, w io.Writer, rules []detect.Rule,
 	}
 
 	for {
+		select {
+		case <-ctx.Done():
+			return stats, ctx.Err()
+		default:
+		}
 		chunk, err := ch.Next()
 		if err == io.EOF {
 			if len(pending) > 0 {
@@ -98,6 +108,9 @@ func Process(ctx context.Context, r io.Reader, w io.Writer, rules []detect.Rule,
 }
 
 func processSegment(ctx context.Context, chunk []byte, w io.Writer, rules []detect.Rule, alloc *pseudo.Allocator, ascii bool, warn func(), stats *Stats) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	chunk = detect.InertEscape(chunk)
 	chunk = ioutil.ReplaceBinaryRuns(chunk, warn)
 	masked, err := maskChunk(ctx, chunk, rules, alloc, ascii, stats)
@@ -116,6 +129,9 @@ func processSegment(ctx context.Context, chunk []byte, w io.Writer, rules []dete
 }
 
 func maskChunk(ctx context.Context, b []byte, rules []detect.Rule, alloc *pseudo.Allocator, ascii bool, stats *Stats) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	ms := detect.FindMatches(rules, b)
 	if len(ms) == 0 {
 		return b, nil

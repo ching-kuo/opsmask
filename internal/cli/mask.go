@@ -35,8 +35,8 @@ func newMask(opts *Options) *cobra.Command {
 				return err
 			}
 			defer closeIn()
-			deny := newDenyWriter(cmd.OutOrStdout(), rt.loaded.DenyList)
-			stats, err := engine.Process(cmd.Context(), in, deny, rt.rules, rt.alloc, engine.Options{
+			deny := newDenyWriter(cmd.OutOrStdout(), rt.Loaded.DenyList)
+			stats, err := engine.Process(cmd.Context(), in, deny, rt.Rules, rt.Alloc, engine.Options{
 				ASCIITokens: ascii, MaxLine: limit,
 				Warn: func(s string) { fmt.Fprintln(cmd.ErrOrStderr(), s) },
 			})

@@ -46,7 +46,7 @@ func newUnmask(opts *Options) *cobra.Command {
 				if !ok {
 					return m
 				}
-				plaintext, found, err := rt.store.Lookup(cmd.Context(), tok.Type, tok.Index)
+				plaintext, found, err := rt.Store.Lookup(cmd.Context(), tok.Type, tok.Index)
 				if err != nil || !found {
 					unknown++
 					return m
