@@ -2,7 +2,6 @@ package exec
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"time"
@@ -30,8 +29,9 @@ const (
 
 func (e OrchestrateError) Error() string { return string(e) }
 
-// Errorf wraps an OrchestrateError with diagnostic context. Callers should
-// errors.Is / errors.As against the typed value, not match on string content.
+// wrappedOrchestrate carries an OrchestrateError plus a diagnostic detail
+// string. errors.Is unwraps to the typed kind; callers should match on the
+// kind, not the message.
 type wrappedOrchestrate struct {
 	kind   OrchestrateError
 	detail string
@@ -51,13 +51,17 @@ func wrapErr(kind OrchestrateError, format string, a ...any) error {
 
 // OrchestrateOptions is the per-call input. Stdin/Stdout/Stderr are owned by
 // the caller — the orchestrator never inherits os.Stdout/os.Stderr defaults.
-// This is load-bearing for the MCP path: the handler MUST pass *bytes.Buffer
-// instances so engine.Process never blocks on a network/pipe writer.
+// MCP handlers MUST pass *bytes.Buffer instances so engine.Process never
+// blocks on a network or pipe writer that ctx cancellation cannot interrupt.
 type OrchestrateOptions struct {
-	Source          string // "cli" or "mcp"; passed straight into the audit Record
-	Cwd             string // recorded in the audit log
-	Timeout         string // optional; parsed via time.ParseDuration
-	RefuseScopeOpen bool   // true for MCP; CLI does not refuse scope-freeform-empty-allow
+	Source  string // "cli" or "mcp"; passed straight into the audit Record
+	Cwd     string // recorded in the audit log
+	Timeout string // optional; parsed via time.ParseDuration
+	// RefuseScopeOpen rejects calls when policy would grant unrestricted
+	// execution (scope=freeform with no allow-list entries). MCP sets this
+	// true; CLI sets it false because a local human who wrote a trusted
+	// freeform config has already accepted that surface.
+	RefuseScopeOpen bool
 	Stdin           io.Reader
 	Stdout          io.Writer
 	Stderr          io.Writer
@@ -179,14 +183,27 @@ func Orchestrate(ctx context.Context, rt Runtime, argv []string, opts Orchestrat
 	res.Audit.EnvDenyCount = env.DenyCount
 	res.Audit.DenyOptOut = rt.Cfg.DenyOptOut
 
+	// Fail-closed pre-execution audit. Preflight only proves the file was
+	// openable when Orchestrate started; an actual write may still fail
+	// (disk full, permission flip, file deletion). Writing the
+	// "starting" record now refuses to run the subprocess if the audit
+	// stream is broken at the moment we'd need it. The post-execution
+	// record below records the outcome.
+	starting := res.Audit
+	starting.ErrorClass = "starting"
+	if werr := WriteRecord(starting); werr != nil {
+		finalize("audit_write_failed", 125)
+		return res, &wrappedOrchestrate{kind: ErrAuditUnwritable, detail: werr.Error()}
+	}
+
 	run := Run(ctx, resolved, RunOptions{
-		Env:    env.Env,
-		Stdin:  opts.Stdin,
-		Stdout: opts.Stdout,
-		Stderr: opts.Stderr,
+		Env:     env.Env,
+		Stdin:   opts.Stdin,
+		Stdout:  opts.Stdout,
+		Stderr:  opts.Stderr,
 		Timeout: timeout,
-		Rules:  rt.Rules,
-		Alloc:  rt.Alloc,
+		Rules:   rt.Rules,
+		Alloc:   rt.Alloc,
 	})
 
 	res.ExitCode = run.ExitCode
@@ -198,16 +215,11 @@ func Orchestrate(ctx context.Context, rt Runtime, argv []string, opts Orchestrat
 	res.Audit.ExitCode = run.ExitCode
 	res.Audit.DurationMs = run.Duration.Milliseconds()
 	res.Audit.ErrorClass = run.ErrorClass
+	// Post-execution record may fail (disk filled mid-Run); the
+	// pre-execution "starting" record is already on disk so forensic
+	// reconstruction stays possible. Surface the failure as a soft error.
 	if werr := WriteRecord(res.Audit); werr != nil {
-		// Audit-write failures after the subprocess ran do not cause the
-		// caller to retry the command; surface as a soft error.
 		return res, fmt.Errorf("audit write failed: %w", werr)
 	}
 	return res, nil
-}
-
-// IsOrchestrateError reports whether err is (or wraps) an OrchestrateError of
-// the given kind. Convenience wrapper around errors.Is.
-func IsOrchestrateError(err error, kind OrchestrateError) bool {
-	return errors.Is(err, kind)
 }

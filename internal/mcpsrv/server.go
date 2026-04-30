@@ -1,10 +1,6 @@
-// Package mcpsrv exposes the OpsMask masking, detection, exec, and observability
-// capabilities to MCP clients (Claude Code, Cursor, Copilot) over stdio JSON-RPC.
-//
-// The package wires the relocated runtime, the shared exec orchestrator, and
-// the audit writers into a Server constructed via NewServer. Subsequent units
-// (U5/U6) attach the actual tool and resource handlers; U1 stands up only the
-// scaffolding required for a clean handshake.
+// Package mcpsrv exposes OpsMask's masking, detection, exec, and
+// observability capabilities to MCP clients (Claude Desktop, Claude
+// Code, Cursor, Copilot) over the standard MCP stdio JSON-RPC transport.
 package mcpsrv
 
 import (
@@ -16,16 +12,12 @@ import (
 // handshake. Set at build time via -ldflags or overridden by the caller.
 var Version = "dev"
 
-// AuditWriter is the lean MCP-call audit sink. Callers pass an implementation
-// (production: internal/mcpsrv.OpenAuditWriter; tests: an in-memory fake) and
-// the server uses it to record every tool/resource invocation.
-//
-// U2 finalizes the contract; U1 keeps the type opaque so future tool handlers
-// can take a dependency on it without further plumbing.
+// AuditWriter is the lean MCP-call audit sink. Production wires
+// *AuditFile (mcp_calls.jsonl); tests can pass a fake or nil. The
+// server calls Close on shutdown so in-flight records flush before
+// the runtime store closes.
 type AuditWriter interface {
-	// Close releases the underlying file handle. The server calls Close as
-	// part of orderly shutdown so in-flight records flush before the runtime
-	// store is closed.
+	Write(rec McpCallRecord) error
 	Close() error
 }
 

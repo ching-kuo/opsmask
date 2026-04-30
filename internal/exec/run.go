@@ -59,18 +59,20 @@ func Run(ctx context.Context, argv []string, opts RunOptions) RunResult {
 	}
 	stderrR, stderrW, err := os.Pipe()
 	if err != nil {
-		_ = stdoutR.Close()
-		_ = stdoutW.Close()
+		closeAll(stdoutR, stdoutW)
 		return RunResult{ExitCode: 125, Duration: time.Since(start), ErrorClass: "wrapper"}
 	}
 	cmd.Stdout = stdoutW
 	cmd.Stderr = stderrW
+	// CloseOnExecAll sets FD_CLOEXEC on every fd >= 3 the parent has open,
+	// including the pipe fds we just created. Safe because the child's
+	// stdout/stderr (fd 1/2) come from dup2 after fork — dup2 clears
+	// FD_CLOEXEC, so writes survive exec. The parent's higher-numbered
+	// pipe fds keeping FD_CLOEXEC means a future grandchild fork wouldn't
+	// inherit them.
 	CloseOnExecAll()
 	if err := cmd.Start(); err != nil {
-		_ = stdoutR.Close()
-		_ = stdoutW.Close()
-		_ = stderrR.Close()
-		_ = stderrW.Close()
+		closeAll(stdoutR, stdoutW, stderrR, stderrW)
 		code := 125
 		class := "wrapper"
 		if errors.Is(err, osexec.ErrNotFound) {
@@ -125,6 +127,9 @@ func Run(ctx context.Context, argv []string, opts RunOptions) RunResult {
 }
 
 func mergeStats(a, b engine.Stats) engine.Stats {
+	if len(a.ByType) == 0 && len(b.ByType) == 0 {
+		return engine.Stats{Masked: a.Masked + b.Masked, Destroyed: a.Destroyed + b.Destroyed}
+	}
 	out := engine.Stats{Masked: a.Masked + b.Masked, Destroyed: a.Destroyed + b.Destroyed, ByType: map[string]int{}}
 	for k, v := range a.ByType {
 		out.ByType[k] += v
@@ -148,6 +153,12 @@ func waitForChild(ctx context.Context, cmd *osexec.Cmd, waitCh chan error, timeo
 	case <-timerC:
 	case <-ctx.Done():
 	}
+	// Defensive: every caller is post-Start so cmd.Process is non-nil, but
+	// guarding here keeps a future contract change from turning a nil deref
+	// into a process-group SIGKILL on pid -1.
+	if cmd.Process == nil {
+		return <-waitCh, false
+	}
 	signalGroup(cmd.Process.Pid, syscall.SIGTERM)
 	graceTimer := time.NewTimer(grace)
 	defer graceTimer.Stop()
@@ -157,6 +168,12 @@ func waitForChild(ctx context.Context, cmd *osexec.Cmd, waitCh chan error, timeo
 	case <-graceTimer.C:
 		signalGroup(cmd.Process.Pid, syscall.SIGKILL)
 		return <-waitCh, true
+	}
+}
+
+func closeAll(closers ...io.Closer) {
+	for _, c := range closers {
+		_ = c.Close()
 	}
 }
 

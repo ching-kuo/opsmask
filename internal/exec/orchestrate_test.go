@@ -198,17 +198,39 @@ func TestOrchestrateAuditSourceForMCP(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Orchestrate: %v", err)
 	}
+	recs := readAuditRecords(t, dir)
+	if len(recs) != 2 {
+		t.Fatalf("got %d records, want 2 (starting + completed)", len(recs))
+	}
+	for _, rec := range recs {
+		if rec.Source != "mcp" {
+			t.Fatalf("Source = %q, want mcp", rec.Source)
+		}
+	}
+	if recs[0].ErrorClass != "starting" {
+		t.Fatalf("first record ErrorClass = %q, want starting", recs[0].ErrorClass)
+	}
+}
+
+// readAuditRecords reads exec.log and returns each line decoded as a Record.
+func readAuditRecords(t *testing.T, dir string) []maskexec.Record {
+	t.Helper()
 	body, err := os.ReadFile(filepath.Join(dir, "exec.log"))
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
-	var rec maskexec.Record
-	if err := json.Unmarshal(bytes.TrimSpace(body), &rec); err != nil {
-		t.Fatalf("decode: %v", err)
+	var out []maskexec.Record
+	for _, line := range bytes.Split(bytes.TrimSpace(body), []byte("\n")) {
+		if len(line) == 0 {
+			continue
+		}
+		var rec maskexec.Record
+		if err := json.Unmarshal(line, &rec); err != nil {
+			t.Fatalf("decode line %q: %v", line, err)
+		}
+		out = append(out, rec)
 	}
-	if rec.Source != "mcp" {
-		t.Fatalf("Source = %q, want mcp", rec.Source)
-	}
+	return out
 }
 
 func io_discard() *bytes.Buffer { return &bytes.Buffer{} }

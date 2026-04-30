@@ -96,14 +96,14 @@ func TestNormalizeSourceForLegacyLines(t *testing.T) {
 	}
 }
 
-func TestAuditDirHonorsEnv(t *testing.T) {
+func TestEnsureAuditDirHonorsEnv(t *testing.T) {
 	dir := setAuditDir(t)
-	got, err := maskexec.AuditDir()
+	got, err := maskexec.EnsureAuditDir()
 	if err != nil {
-		t.Fatalf("AuditDir: %v", err)
+		t.Fatalf("EnsureAuditDir: %v", err)
 	}
 	if got != dir {
-		t.Fatalf("AuditDir = %q, want %q", got, dir)
+		t.Fatalf("EnsureAuditDir = %q, want %q", got, dir)
 	}
 }
 
@@ -219,7 +219,8 @@ func TestRecordLiteralASTDriftBlocksExternalConstruction(t *testing.T) {
 		}
 		if info.IsDir() {
 			base := filepath.Base(path)
-			if base == ".git" || base == "vendor" || base == "node_modules" {
+			switch base {
+			case ".git", "vendor", "node_modules", "docs", "dist", "testdata":
 				return filepath.SkipDir
 			}
 			return nil
@@ -241,19 +242,25 @@ func TestRecordLiteralASTDriftBlocksExternalConstruction(t *testing.T) {
 			return nil // syntax errors are caught by `go build`; not our job
 		}
 		// Must import internal/exec (under any alias) for a Record{} literal
-		// in this file to refer to maskexec.Record.
+		// in this file to refer to maskexec.Record. Track three forms:
+		// named alias (`al "..."`), default alias (`exec`), and dot
+		// import (`. "..."`) which exposes Record as a bare identifier.
 		execAlias := ""
+		dotImported := false
 		for _, imp := range f.Imports {
-			if strings.Trim(imp.Path.Value, `"`) == "github.com/ching-kuo/opsmask/internal/exec" {
-				if imp.Name != nil {
-					execAlias = imp.Name.Name
-				} else {
-					execAlias = "exec"
-				}
-				break
+			if strings.Trim(imp.Path.Value, `"`) != "github.com/ching-kuo/opsmask/internal/exec" {
+				continue
 			}
+			if imp.Name == nil {
+				execAlias = "exec"
+			} else if imp.Name.Name == "." {
+				dotImported = true
+			} else {
+				execAlias = imp.Name.Name
+			}
+			break
 		}
-		if execAlias == "" {
+		if execAlias == "" && !dotImported {
 			return nil
 		}
 		ast.Inspect(f, func(n ast.Node) bool {
@@ -261,17 +268,21 @@ func TestRecordLiteralASTDriftBlocksExternalConstruction(t *testing.T) {
 			if !ok || lit.Type == nil {
 				return true
 			}
-			sel, ok := lit.Type.(*ast.SelectorExpr)
-			if !ok {
-				return true
-			}
-			pkgIdent, ok := sel.X.(*ast.Ident)
-			if !ok {
-				return true
-			}
-			if pkgIdent.Name == execAlias && sel.Sel.Name == "Record" {
-				pos := fset.Position(lit.Pos())
-				offenders = append(offenders, fmt.Sprintf("%s:%d", pos.Filename, pos.Line))
+			switch t := lit.Type.(type) {
+			case *ast.SelectorExpr:
+				pkgIdent, ok := t.X.(*ast.Ident)
+				if !ok {
+					return true
+				}
+				if pkgIdent.Name == execAlias && t.Sel.Name == "Record" {
+					pos := fset.Position(lit.Pos())
+					offenders = append(offenders, fmt.Sprintf("%s:%d", pos.Filename, pos.Line))
+				}
+			case *ast.Ident:
+				if dotImported && t.Name == "Record" {
+					pos := fset.Position(lit.Pos())
+					offenders = append(offenders, fmt.Sprintf("%s:%d (dot-import)", pos.Filename, pos.Line))
+				}
 			}
 			return true
 		})

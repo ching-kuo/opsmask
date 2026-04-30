@@ -232,6 +232,40 @@ func (s *SQLite) Stats(ctx context.Context) (Stats, error) {
 	return out, rows.Err()
 }
 
+// ListTokens returns rows projected to the safe columns. The plaintext
+// real_value column is never selected; only its length is fetched, so
+// the server process never holds plaintext on its heap for read-only
+// token-enumeration paths (e.g. the MCP mapping resource).
+func (s *SQLite) ListTokens(ctx context.Context, typ string, limit int) ([]TokenRow, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	q := `SELECT type, index_truncated, length(real_value), first_seen_at FROM mapping`
+	args := []any{}
+	if typ != "" {
+		q += ` WHERE type=?`
+		args = append(args, typ)
+	}
+	q += ` ORDER BY first_seen_at DESC LIMIT ?`
+	args = append(args, limit)
+	rows, err := s.reader.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []TokenRow
+	for rows.Next() {
+		var tr TokenRow
+		var ts int64
+		if err := rows.Scan(&tr.Type, &tr.Index, &tr.RealLength, &ts); err != nil {
+			return nil, err
+		}
+		tr.FirstSeenAt = time.Unix(ts, 0)
+		out = append(out, tr)
+	}
+	return out, rows.Err()
+}
+
 // Prune deletes mapping rows older than the given duration. Callers must pass
 // a positive duration; a non-positive value is rejected to avoid wiping the
 // whole store by accident.

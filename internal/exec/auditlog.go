@@ -88,11 +88,20 @@ func Preflight() error {
 }
 
 func openAuditLog() (*os.File, string, error) {
+	return OpenAppendLog("exec.log")
+}
+
+// OpenAppendLog resolves AuditDir, creates it with mode 0700 if missing,
+// and opens the named log file in append-only mode with mode 0600 and
+// FD_CLOEXEC. Refuses pre-existing files whose permissions are wider
+// than 0600. Used by exec.log and mcp_calls.jsonl alike — both streams
+// share permission semantics so they must share the open helper.
+func OpenAppendLog(name string) (*os.File, string, error) {
 	dir, err := EnsureAuditDir()
 	if err != nil {
 		return nil, "", err
 	}
-	path := filepath.Join(dir, "exec.log")
+	path := filepath.Join(dir, name)
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY|syscall.O_CLOEXEC, 0o600)
 	if err != nil {
 		return nil, "", err
@@ -115,17 +124,10 @@ func auditDir() (string, error) {
 	return filepath.Join(base, "opsmask"), nil
 }
 
-// AuditDir returns the directory where exec.log and mcp_calls.jsonl are
-// stored. Honors $OPSMASK_AUDIT_DIR if set, otherwise os.UserConfigDir() +
-// "/opsmask". Exported so internal/mcpsrv can open mcp_calls.jsonl in the
-// same directory without duplicating the resolver.
-func AuditDir() (string, error) {
-	return auditDir()
-}
-
-// EnsureAuditDir resolves AuditDir, creates it with mode 0700 if missing,
-// and rejects pre-existing directories whose permissions are wider than
-// 0700. Used by both exec.log and mcp_calls.jsonl writers.
+// EnsureAuditDir resolves the audit directory (honoring OPSMASK_AUDIT_DIR
+// or os.UserConfigDir() + "/opsmask"), creates it with mode 0700 if
+// missing, and rejects pre-existing directories whose permissions are
+// wider than 0700. Used by both exec.log and mcp_calls.jsonl writers.
 func EnsureAuditDir() (string, error) {
 	dir, err := auditDir()
 	if err != nil {

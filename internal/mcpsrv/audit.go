@@ -4,9 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/ching-kuo/opsmask/internal/exec"
@@ -39,30 +37,23 @@ type AuditFile struct {
 	f  *os.File
 }
 
-// OpenAuditWriter resolves the audit directory (via exec.AuditDir), creates
-// it with mode 0700 if missing, and opens mcp_calls.jsonl in append-only mode.
+// OpenAuditWriter opens mcp_calls.jsonl in the audit directory in
+// append-only mode with mode 0600. Permission semantics are shared with
+// exec.log via exec.OpenAppendLog.
 func OpenAuditWriter() (*AuditFile, error) {
-	dir, err := exec.EnsureAuditDir()
-	if err != nil {
-		return nil, err
-	}
-	path := filepath.Join(dir, "mcp_calls.jsonl")
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY|syscall.O_CLOEXEC, 0o600)
+	f, _, err := exec.OpenAppendLog("mcp_calls.jsonl")
 	if err != nil {
 		return nil, fmt.Errorf("open mcp audit log: %w", err)
-	}
-	if info, err := f.Stat(); err == nil && info.Mode().Perm()&0o077 != 0 {
-		_ = f.Close()
-		return nil, fmt.Errorf("%s must not be group/world accessible", path)
 	}
 	return &AuditFile{f: f}, nil
 }
 
-// Write appends a single record as a JSON line. The mutex serializes encode
-// + write within a single process; POSIX append-mode atomicity covers
-// cross-process safety for line-sized writes.
+// Write appends a single record as a JSON line. The mutex serializes the
+// nil check and the syscall so a concurrent Close cannot retire a.f
+// between the two; POSIX append-mode atomicity covers cross-process
+// safety for line-sized writes.
 func (a *AuditFile) Write(rec McpCallRecord) error {
-	if a == nil || a.f == nil {
+	if a == nil {
 		return fmt.Errorf("audit writer is nil")
 	}
 	if rec.Ts.IsZero() {
@@ -77,6 +68,9 @@ func (a *AuditFile) Write(rec McpCallRecord) error {
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if a.f == nil {
+		return fmt.Errorf("audit writer closed")
+	}
 	_, err = a.f.Write(append(line, '\n'))
 	return err
 }

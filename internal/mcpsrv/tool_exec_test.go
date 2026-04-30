@@ -66,9 +66,12 @@ func TestExecRefusesUntrusted(t *testing.T) {
 	cfg := config.ExecConfig{Enabled: true, Scope: config.ScopeReadOnly}
 	sess, _, cleanup := configuredServer(t, cfg, true)
 	defer cleanup()
-	res, _ := callExec(t, sess, []string{"echo", "hi"})
+	res, out := callExec(t, sess, []string{"echo", "hi"})
 	if !res.IsError {
 		t.Fatal("expected error result")
+	}
+	if out.ErrorCode != mcpsrv.ErrCodeUntrusted {
+		t.Fatalf("ErrorCode = %q, want %q", out.ErrorCode, mcpsrv.ErrCodeUntrusted)
 	}
 	body, _ := json.Marshal(res.Content)
 	if !strings.Contains(string(body), "EXEC_UNTRUSTED") {
@@ -80,13 +83,9 @@ func TestExecRefusesDisabled(t *testing.T) {
 	cfg := config.ExecConfig{Enabled: false, Scope: config.ScopeReadOnly}
 	sess, _, cleanup := configuredServer(t, cfg, false)
 	defer cleanup()
-	res, _ := callExec(t, sess, []string{"echo", "hi"})
-	if !res.IsError {
-		t.Fatal("expected error result")
-	}
-	body, _ := json.Marshal(res.Content)
-	if !strings.Contains(string(body), "EXEC_DISABLED") {
-		t.Fatalf("body = %s, want EXEC_DISABLED", body)
+	res, out := callExec(t, sess, []string{"echo", "hi"})
+	if !res.IsError || out.ErrorCode != mcpsrv.ErrCodeDisabled {
+		t.Fatalf("ErrorCode = %q want %q", out.ErrorCode, mcpsrv.ErrCodeDisabled)
 	}
 }
 
@@ -94,13 +93,9 @@ func TestExecRefusesEmptyArgv(t *testing.T) {
 	cfg := config.ExecConfig{Enabled: true, Scope: config.ScopeReadOnly}
 	sess, _, cleanup := configuredServer(t, cfg, false)
 	defer cleanup()
-	res, _ := callExec(t, sess, []string{})
-	if !res.IsError {
-		t.Fatal("expected error result")
-	}
-	body, _ := json.Marshal(res.Content)
-	if !strings.Contains(string(body), "INVALID_ARGS") {
-		t.Fatalf("body = %s, want INVALID_ARGS", body)
+	res, out := callExec(t, sess, []string{})
+	if !res.IsError || out.ErrorCode != mcpsrv.ErrCodeInvalidArgs {
+		t.Fatalf("ErrorCode = %q want %q", out.ErrorCode, mcpsrv.ErrCodeInvalidArgs)
 	}
 }
 
@@ -108,13 +103,9 @@ func TestExecRefusesScopeOpenForMCP(t *testing.T) {
 	cfg := config.ExecConfig{Enabled: true, Scope: config.ScopeFreeform}
 	sess, _, cleanup := configuredServer(t, cfg, false)
 	defer cleanup()
-	res, _ := callExec(t, sess, []string{"echo", "hi"})
-	if !res.IsError {
-		t.Fatal("expected error result")
-	}
-	body, _ := json.Marshal(res.Content)
-	if !strings.Contains(string(body), "EXEC_SCOPE_OPEN_REFUSED") {
-		t.Fatalf("body = %s, want EXEC_SCOPE_OPEN_REFUSED", body)
+	res, out := callExec(t, sess, []string{"echo", "hi"})
+	if !res.IsError || out.ErrorCode != mcpsrv.ErrCodeScopeOpenRefused {
+		t.Fatalf("ErrorCode = %q want %q", out.ErrorCode, mcpsrv.ErrCodeScopeOpenRefused)
 	}
 }
 
@@ -122,13 +113,9 @@ func TestExecRefusesPolicyDenial(t *testing.T) {
 	cfg := config.ExecConfig{Enabled: true, Scope: config.ScopeReadOnly}
 	sess, _, cleanup := configuredServer(t, cfg, false)
 	defer cleanup()
-	res, _ := callExec(t, sess, []string{"cat", "/etc/passwd"})
-	if !res.IsError {
-		t.Fatal("expected error result")
-	}
-	body, _ := json.Marshal(res.Content)
-	if !strings.Contains(string(body), "EXEC_POLICY_DENIED") {
-		t.Fatalf("body = %s, want EXEC_POLICY_DENIED", body)
+	res, out := callExec(t, sess, []string{"cat", "/etc/passwd"})
+	if !res.IsError || out.ErrorCode != mcpsrv.ErrCodePolicyDenied {
+		t.Fatalf("ErrorCode = %q want %q", out.ErrorCode, mcpsrv.ErrCodePolicyDenied)
 	}
 }
 
@@ -196,8 +183,12 @@ func TestExecInvalidTimeout(t *testing.T) {
 	if !res.IsError {
 		t.Fatal("expected error result")
 	}
-	body, _ := json.Marshal(res.Content)
-	if !strings.Contains(string(body), "INVALID_TIMEOUT") {
-		t.Fatalf("body = %s, want INVALID_TIMEOUT", body)
+	var out mcpsrv.ExecOutput
+	if res.StructuredContent != nil {
+		raw, _ := json.Marshal(res.StructuredContent)
+		_ = json.Unmarshal(raw, &out)
+	}
+	if out.ErrorCode != mcpsrv.ErrCodeInvalidTimeout {
+		t.Fatalf("ErrorCode = %q, want %q", out.ErrorCode, mcpsrv.ErrCodeInvalidTimeout)
 	}
 }

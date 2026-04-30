@@ -27,6 +27,15 @@
 
 ### Security
 
+- **`exec` audit log now writes a pre-execution record.** Every `exec`
+  invocation (CLI or MCP) writes two JSON-Lines records to `exec.log`:
+  a `"starting"` record before `Run()` is invoked and a final outcome
+  record after it returns. Closes a TOCTOU window where `Preflight`
+  succeeded but the post-execution `WriteRecord` could fail (disk full
+  mid-run), leaving an already-executed subprocess unaudited. The
+  `"starting"` record carries argv, scope, and policy match; the final
+  record adds `exit_code`, `duration_ms`, and `error_class`. Forensic
+  reconstruction is preserved even if the final write fails.
 - **`unmask` is intentionally not exposed as an MCP tool.** Plaintext
   never leaves the human's TTY through MCP. This is a deliberate
   divergence from CloakMCP and similar tools that ship `unpack` over

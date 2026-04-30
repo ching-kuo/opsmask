@@ -47,12 +47,9 @@ func newExec(opts *Options) *cobra.Command {
 				Cfg:       cfg,
 			}
 			result, err := maskexec.Orchestrate(runCtx, runtime, args, maskexec.OrchestrateOptions{
-				Source:  maskexec.SourceCLI,
-				Cwd:     cwd,
-				Timeout: timeout,
-				// CLI does not refuse scope=freeform+empty-allow; only the MCP
-				// path applies that tightening. Local users who wrote a trusted
-				// freeform config knew what they were doing.
+				Source:          maskexec.SourceCLI,
+				Cwd:             cwd,
+				Timeout:         timeout,
 				RefuseScopeOpen: false,
 				Stdin:           os.Stdin,
 				Stdout:          cmd.OutOrStdout(),

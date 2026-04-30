@@ -77,7 +77,7 @@ func readMappingResource(ctx context.Context, rt *runtime.Env, uri string) ([]by
 	if err != nil {
 		return nil, "", err
 	}
-	rows, err := rt.Store.List(ctx, typ, limit+1) // +1 to detect truncation
+	rows, err := rt.Store.ListTokens(ctx, typ, limit+1) // +1 to detect truncation
 	if err != nil {
 		return nil, typ, fmt.Errorf("list mappings: %w", err)
 	}
@@ -93,7 +93,7 @@ func readMappingResource(ctx context.Context, rt *runtime.Env, uri string) ([]by
 	for _, r := range rows {
 		body.Entries = append(body.Entries, MappingResourceEntry{
 			Token:  detect.RenderToken(r.Type, r.Index, false),
-			Length: len(r.RealValue),
+			Length: r.RealLength,
 		})
 	}
 	body.Truncated = truncated

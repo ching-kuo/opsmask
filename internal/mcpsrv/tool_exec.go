@@ -3,6 +3,7 @@ package mcpsrv
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -21,6 +22,11 @@ type ExecInput struct {
 
 // ExecOutput mirrors the relevant subset of OrchestrateResult plus the
 // re-masked stdout/stderr captured by the engine.
+//
+// ErrorCode carries a stable string discriminant on failure (one of the
+// EXEC_* / INVALID_* / INPUT_TOO_LARGE constants below). Clients should
+// branch on ErrorCode rather than parsing the SDK's text-content error
+// message — the message wording may change but the code will not.
 type ExecOutput struct {
 	ExitCode   int            `json:"exit_code"`
 	Stdout     string         `json:"stdout"`
@@ -29,7 +35,24 @@ type ExecOutput struct {
 	Masked     int            `json:"masked"`
 	Destroyed  int            `json:"destroyed"`
 	ByType     map[string]int `json:"by_type,omitempty"`
+	ErrorCode  string         `json:"error_code,omitempty"`
 }
+
+// Stable error codes returned in ExecOutput.ErrorCode and the SDK error
+// text. Clients should match against these constants rather than parsing
+// the human-readable message that may follow.
+const (
+	ErrCodeInvalidArgs        = "INVALID_ARGS"
+	ErrCodeInputTooLarge      = "INPUT_TOO_LARGE"
+	ErrCodeInvalidTimeout     = "INVALID_TIMEOUT"
+	ErrCodeAuditUnwritable    = "EXEC_AUDIT_UNWRITABLE"
+	ErrCodeUntrusted          = "EXEC_UNTRUSTED"
+	ErrCodeDisabled           = "EXEC_DISABLED"
+	ErrCodeScopeOpenRefused   = "EXEC_SCOPE_OPEN_REFUSED"
+	ErrCodeResolveFailed      = "EXEC_RESOLVE_FAILED"
+	ErrCodePolicyDenied       = "EXEC_POLICY_DENIED"
+	ErrCodeInternal           = "EXEC_INTERNAL"
+)
 
 func registerExecTool(srv *mcp.Server, rt *runtime.Env, audit AuditWriter, caps Caps) {
 	mcp.AddTool(srv, &mcp.Tool{
@@ -46,25 +69,32 @@ func registerExecTool(srv *mcp.Server, rt *runtime.Env, audit AuditWriter, caps 
 			ResultSizeBytes: len(out.Stdout) + len(out.Stderr),
 			DurationMs:      time.Since(start).Milliseconds(),
 		})
-		return nil, out, err
+		if err != nil {
+			// Build the error result manually so structuredContent (carrying
+			// ExecOutput.ErrorCode) survives. Returning a Go error to the SDK
+			// produces a text-only error response with no structured payload,
+			// forcing clients to string-parse — that's what we are fixing.
+			return execErrorResult(out, err), out, nil
+		}
+		return nil, out, nil
 	})
 }
 
 func handleExec(ctx context.Context, rt *runtime.Env, in ExecInput, caps Caps) (ExecOutput, error) {
 	if len(in.Argv) == 0 {
-		return ExecOutput{}, errors.New("INVALID_ARGS: argv is empty")
+		return execFailure(ErrCodeInvalidArgs, "argv is empty")
 	}
 	totalArgvBytes := 0
 	for _, a := range in.Argv {
 		totalArgvBytes += len(a)
 	}
 	if totalArgvBytes > caps.MaxTextBytes {
-		return ExecOutput{}, fmt.Errorf("INPUT_TOO_LARGE: argv=%d bytes exceeds cap=%d", totalArgvBytes, caps.MaxTextBytes)
+		return execFailure(ErrCodeInputTooLarge, fmt.Sprintf("argv=%d bytes exceeds cap=%d", totalArgvBytes, caps.MaxTextBytes))
 	}
 	if in.Timeout != "" {
 		// Validate before invoking Orchestrate so we surface a stable code.
 		if _, err := time.ParseDuration(in.Timeout); err != nil {
-			return ExecOutput{}, fmt.Errorf("INVALID_TIMEOUT: %v", err)
+			return execFailure(ErrCodeInvalidTimeout, err.Error())
 		}
 	}
 
@@ -97,39 +127,73 @@ func handleExec(ctx context.Context, rt *runtime.Env, in ExecInput, caps Caps) (
 		ByType:     res.ByType,
 	}
 	if err != nil {
-		return out, mapOrchestrateError(err)
+		code := classifyOrchestrateError(err)
+		out.ErrorCode = code
+		return out, errors.New(code)
 	}
 	return out, nil
 }
 
-func mapOrchestrateError(err error) error {
+// execFailure returns an ExecOutput with ErrorCode populated and a Go error
+// whose Error() string is the stable code. The SDK marks the result as an
+// error and serializes both the code (in structured content) and the human
+// message (in text content); clients should branch on ErrorCode.
+func execFailure(code, detail string) (ExecOutput, error) {
+	if detail == "" {
+		return ExecOutput{ErrorCode: code}, errors.New(code)
+	}
+	return ExecOutput{ErrorCode: code}, fmt.Errorf("%s: %s", code, detail)
+}
+
+// classifyOrchestrateError maps a typed Orchestrate error to the stable
+// ErrCode* constant. Any unknown wrapping falls through to ErrCodeInternal.
+func classifyOrchestrateError(err error) string {
 	switch {
 	case errors.Is(err, maskexec.ErrAuditUnwritable):
-		return errors.New("EXEC_AUDIT_UNWRITABLE")
+		return ErrCodeAuditUnwritable
 	case errors.Is(err, maskexec.ErrUntrusted):
-		return errors.New("EXEC_UNTRUSTED")
+		return ErrCodeUntrusted
 	case errors.Is(err, maskexec.ErrDisabled):
-		return errors.New("EXEC_DISABLED")
+		return ErrCodeDisabled
 	case errors.Is(err, maskexec.ErrScopeOpen):
-		return errors.New("EXEC_SCOPE_OPEN_REFUSED")
+		return ErrCodeScopeOpenRefused
 	case errors.Is(err, maskexec.ErrTimeoutParse):
-		return errors.New("INVALID_TIMEOUT")
+		return ErrCodeInvalidTimeout
 	case errors.Is(err, maskexec.ErrResolve):
-		return errors.New("EXEC_RESOLVE_FAILED")
+		return ErrCodeResolveFailed
 	case errors.Is(err, maskexec.ErrPolicyDenied):
-		return errors.New("EXEC_POLICY_DENIED")
+		return ErrCodePolicyDenied
 	}
-	return fmt.Errorf("EXEC_INTERNAL: %v", err)
+	return ErrCodeInternal
 }
 
 func errClassExec(err error, out ExecOutput) string {
+	if out.ErrorCode != "" {
+		return out.ErrorCode
+	}
 	if err != nil {
-		return errClass(err)
+		return classifyOrchestrateError(err)
 	}
 	if out.ExitCode != 0 {
 		return "non_zero"
 	}
 	return ""
+}
+
+// execErrorResult constructs a CallToolResult that carries both human-
+// readable text content (the error message) and structured content
+// (ExecOutput, including ErrorCode). The SDK marshals the typed output via
+// json so clients receive a stable `error_code` field they can branch on.
+func execErrorResult(out ExecOutput, err error) *mcp.CallToolResult {
+	structured, mErr := json.Marshal(out)
+	if mErr != nil {
+		structured = []byte("{}")
+	}
+	return &mcp.CallToolResult{
+		IsError: true,
+		Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}},
+		StructuredContent: json.RawMessage(structured),
+	}
 }
 
 func truncateString(s string, cap int) string {

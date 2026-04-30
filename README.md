@@ -346,10 +346,14 @@ exec:
 `curl` and `wget` are not in any baseline; allow them explicitly when needed.
 
 `exec` writes JSON-lines audit records to `~/.config/opsmask/exec.log`
-(mode `0600`). Records include unresolved argv, scope, policy match, exit
-code, duration, and env-shaping counts. The audit log is preflighted before
-any child runs: if the file or directory is unwritable, `exec` refuses with
-exit 125.
+(mode `0600`). Each invocation writes two records: a `"starting"` record
+before the child process runs (with argv, scope, policy match, env-shaping
+counts) and a final record afterward (with `exit_code`, `duration_ms`,
+`error_class`). The pre-execution record is the load-bearing forensic
+anchor — if the audit log becomes unwritable between `Preflight` and
+the final write, the subprocess refuses to run. If a write fails *after*
+the subprocess has already executed (e.g. disk filled mid-Run), the
+`"starting"` record on disk preserves reconstruction.
 
 ### Child environment shaping
 

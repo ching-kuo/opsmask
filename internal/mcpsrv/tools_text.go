@@ -87,9 +87,11 @@ func handleMaskText(ctx context.Context, rt *runtime.Env, in MaskTextInput, caps
 	if len(in.Text) > caps.MaxTextBytes {
 		return MaskTextOutput{}, fmt.Errorf("INPUT_TOO_LARGE: text=%d bytes exceeds cap=%d", len(in.Text), caps.MaxTextBytes)
 	}
-	// Owned bounded buffer — never inherit a writer from the SDK or transport.
-	// engine.Process must operate on an in-memory writer for the cancellation
-	// contract from U3 to hold.
+	// Owned bounded buffer — never inherit a writer from the SDK or
+	// transport. engine.Process needs an in-memory writer because
+	// in-flight Write to a network/pipe writer is uninterruptible by
+	// ctx cancellation; routing through a buffer keeps cancellation
+	// effective.
 	var out bytes.Buffer
 	stats, err := engine.Process(ctx, strings.NewReader(in.Text), &out, rt.Rules, rt.Alloc, engine.Options{
 		ASCIITokens: in.ASCIITokens,
@@ -123,16 +125,16 @@ func handleDetectText(ctx context.Context, rt *runtime.Env, in DetectTextInput, 
 	return res, nil
 }
 
+// writeAudit fails open: the per-call audit append is best-effort and
+// any failure is swallowed. Exposing the failure state through MCP would
+// give an attacker who controls disk fill capacity an oracle to confirm
+// their attack landed; the risk table documents the asymmetry vs. the
+// fail-closed exec.log path.
 func writeAudit(w AuditWriter, rec McpCallRecord) {
-	// Fail-open: log to server stderr only (no MCP-visible signal) per the
-	// risk-table contract. The CLI mcp serve wires os.Stderr at startup;
-	// tests pass nil and skip auditing.
 	if w == nil {
 		return
 	}
-	if af, ok := w.(*AuditFile); ok && af != nil {
-		_ = af.Write(rec)
-	}
+	_ = w.Write(rec)
 }
 
 func errClass(err error) string {
