@@ -2,6 +2,70 @@
 
 ## Unreleased
 
+### Added
+
+- **MCP server (`opsmask mcp serve`).** Stdio Model Context Protocol server
+  exposing five tools (`mask_text`, `detect_text`, `exec`, `mapping_stats`,
+  `list_detectors`) and one resource template (`opsmask://mapping/{type}`)
+  to LLM clients (Claude Desktop, Claude Code, Cursor, Copilot). Uses the
+  official `modelcontextprotocol/go-sdk`. README ships paste-ready config
+  snippets for each client.
+- **`exec` over MCP** with one MCP-specific tightening: refuses when the
+  policy would otherwise grant unrestricted execution
+  (`scope: freeform` paired with an empty allow-list). Freeform plus a
+  real allow-list remains a legitimate workflow.
+- **`mcp_calls.jsonl` audit stream** alongside `exec.log` for non-exec
+  MCP tool invocations. Counts and sizes only; never content. Multi-process
+  POSIX-append safe like the existing `exec.log`.
+- **`Source` field on `exec.Record`** with a `NewRecord(source)` constructor
+  and runtime rejection of records with unset/invalid sources. CLI records
+  carry `"source":"cli"`; MCP exec calls carry `"source":"mcp"`.
+- **`Store.Stats(ctx)` method** returning per-type pseudonym counts in a
+  single read query.
+- **Side-effect-free `detect.Scan`** path used by `detect_text` to scan
+  text without persisting any pseudonyms.
+
+### Security
+
+- **`unmask` is intentionally not exposed as an MCP tool.** Plaintext
+  never leaves the human's TTY through MCP. This is a deliberate
+  divergence from CloakMCP and similar tools that ship `unpack` over
+  MCP. README documents the rationale.
+- **MCP mapping resource never returns plaintext or HMAC bytes** — only
+  sentinel tokens and byte lengths. Cross-store correlation via HMAC
+  equality is impossible by construction; the contract is verified by
+  multi-encoding tests (raw, hex, base64 std/url/raw).
+- **Engine cancellation** propagates request context through
+  `engine.Process` at four sites (probe loop, outer loop, processSegment,
+  maskChunk) so a client disconnect aborts in-flight masking. Documented
+  caveat: `bufio.Reader.ReadSlice` and `io.Writer.Write` cannot be
+  ctx-cancelled mid-call; MCP tool handlers always pass `*bytes.Buffer`
+  writers so this limitation does not apply on the MCP path.
+- **Audit asymmetry by design.** `exec.log` writes fail closed (no
+  un-audited subprocess execution); `mcp_calls.jsonl` writes fail open
+  (high-DOS surface, lower forensic value per call). The asymmetry is
+  documented in `docs/REMAINING_RISKS.md` and the failure status is
+  logged only to the server's stderr — never via MCP, so it cannot
+  serve as an attack-success oracle.
+
+### Changed
+
+- **Race fix in `internal/exec.Run`.** Replaced `cmd.StdoutPipe`/
+  `cmd.StderrPipe` with manually-managed `os.Pipe` instances. The Go
+  standard library's `cmd.Wait` closes pipes returned by `StdoutPipe`/
+  `StderrPipe` immediately on process exit, racing concurrent reader
+  goroutines that drain output for `engine.Process`. The manual pipes
+  stay open until the readers see EOF.
+- **`internal/runtime` package** now hosts the `Env` / `New` / `Close`
+  API previously inlined as unexported helpers in `internal/cli`. The
+  CLI keeps a thin alias for source compatibility; `internal/mcpsrv`
+  consumes the same construction path.
+- **Shared exec orchestration** lives in `internal/exec.Orchestrate`.
+  CLI `exec` and MCP `exec` go through the same code path; the MCP
+  caller opts into the scope-open refusal via `RefuseScopeOpen: true`.
+
+## v0.1.0
+
 ### Changed
 
 - **Renamed project from `llm-mask` to `OpsMask`.** This is a breaking change

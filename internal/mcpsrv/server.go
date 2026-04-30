@@ -29,15 +29,41 @@ type AuditWriter interface {
 	Close() error
 }
 
+// Caps are the configurable per-call size caps. Production callers can leave
+// the zero value; NewServer applies defaults (4 MiB each). Tests construct
+// smaller caps to exercise INPUT_TOO_LARGE.
+type Caps struct {
+	MaxTextBytes       int
+	MaxExecOutputBytes int
+}
+
+// DefaultCaps returns the v1 production caps. The 4 MiB ceiling is dictated
+// by JSON-RPC stdio framing budgets; per-line is plenty for realistic log
+// snippets while keeping memory bounded.
+func DefaultCaps() Caps {
+	return Caps{
+		MaxTextBytes:       4 << 20,
+		MaxExecOutputBytes: 4 << 20,
+	}
+}
+
 // NewServer constructs an MCP server bound to the given runtime and audit
-// writer. The returned *mcp.Server has no tools or resources registered; the
-// caller (U5/U6) attaches them.
+// writer. Tools and the mapping resource are registered with default caps.
 //
 // Capabilities advertised: tools and resources, both without subscription
 // support — the v1 contract is read-on-demand snapshots only.
 func NewServer(rt *runtime.Env, audit AuditWriter) *mcp.Server {
-	_ = rt    // U5/U6 wire handlers that close over rt
-	_ = audit // U5/U6 wire handlers that close over audit
+	return NewServerWithCaps(rt, audit, DefaultCaps())
+}
+
+// NewServerWithCaps is NewServer with explicit Caps. Used in tests.
+func NewServerWithCaps(rt *runtime.Env, audit AuditWriter, caps Caps) *mcp.Server {
+	if caps.MaxTextBytes <= 0 {
+		caps.MaxTextBytes = DefaultCaps().MaxTextBytes
+	}
+	if caps.MaxExecOutputBytes <= 0 {
+		caps.MaxExecOutputBytes = DefaultCaps().MaxExecOutputBytes
+	}
 	impl := &mcp.Implementation{
 		Name:    "opsmask",
 		Title:   "OpsMask",
@@ -51,5 +77,12 @@ func NewServer(rt *runtime.Env, audit AuditWriter) *mcp.Server {
 			Resources: &mcp.ResourceCapabilities{Subscribe: false},
 		},
 	}
-	return mcp.NewServer(impl, opts)
+	srv := mcp.NewServer(impl, opts)
+	if rt != nil {
+		registerTextTools(srv, rt, audit, caps)
+		registerObservabilityTools(srv, rt, audit)
+		registerExecTool(srv, rt, audit, caps)
+		registerMappingResource(srv, rt, audit)
+	}
+	return srv
 }

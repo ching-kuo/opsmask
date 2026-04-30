@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
 	osexec "os/exec"
 	"sync"
 	"syscall"
@@ -47,16 +48,29 @@ func Run(ctx context.Context, argv []string, opts RunOptions) RunResult {
 	cmd.Env = opts.Env
 	cmd.Stdin = opts.Stdin
 	setProcessGroup(cmd)
-	stdout, err := cmd.StdoutPipe()
+	// Manage pipes manually instead of StdoutPipe/StderrPipe. cmd.Wait closes
+	// any StdoutPipe/StderrPipe on completion, which can race with the
+	// reader goroutines that drain output for engine.Process. Manual pipes
+	// stay open until our readers see EOF (after the child closes its
+	// write ends on exit), then we close them ourselves.
+	stdoutR, stdoutW, err := os.Pipe()
 	if err != nil {
 		return RunResult{ExitCode: 125, Duration: time.Since(start), ErrorClass: "wrapper"}
 	}
-	stderr, err := cmd.StderrPipe()
+	stderrR, stderrW, err := os.Pipe()
 	if err != nil {
+		_ = stdoutR.Close()
+		_ = stdoutW.Close()
 		return RunResult{ExitCode: 125, Duration: time.Since(start), ErrorClass: "wrapper"}
 	}
+	cmd.Stdout = stdoutW
+	cmd.Stderr = stderrW
 	CloseOnExecAll()
 	if err := cmd.Start(); err != nil {
+		_ = stdoutR.Close()
+		_ = stdoutW.Close()
+		_ = stderrR.Close()
+		_ = stderrW.Close()
 		code := 125
 		class := "wrapper"
 		if errors.Is(err, osexec.ErrNotFound) {
@@ -64,11 +78,24 @@ func Run(ctx context.Context, argv []string, opts RunOptions) RunResult {
 		}
 		return RunResult{ExitCode: code, Duration: time.Since(start), ErrorClass: class}
 	}
+	// Close the parent's copies of the write ends now that the child has
+	// inherited them. Without this, the readers never see EOF because the
+	// kernel keeps the pipe open as long as any process holds the write end.
+	_ = stdoutW.Close()
+	_ = stderrW.Close()
 	var streamWg sync.WaitGroup
 	streamWg.Add(2)
 	var stdoutStats, stderrStats engine.Stats
-	go func() { defer streamWg.Done(); stdoutStats = maskStream(ctx, stdout, opts.Stdout, opts) }()
-	go func() { defer streamWg.Done(); stderrStats = maskStream(ctx, stderr, opts.Stderr, opts) }()
+	go func() {
+		defer streamWg.Done()
+		stdoutStats = maskStream(ctx, stdoutR, opts.Stdout, opts)
+		_ = stdoutR.Close()
+	}()
+	go func() {
+		defer streamWg.Done()
+		stderrStats = maskStream(ctx, stderrR, opts.Stderr, opts)
+		_ = stderrR.Close()
+	}()
 
 	waitCh := make(chan error, 1)
 	go func() { waitCh <- cmd.Wait() }()
