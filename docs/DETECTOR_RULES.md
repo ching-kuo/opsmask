@@ -1,7 +1,7 @@
 # Detector rule sourcing
 
-`llm-mask` treats the masker as the trust boundary: if a credential survives
-`llm-mask mask`, it may be sent to an LLM. Built-in rules therefore prioritize
+`opsmask` treats the masker as the trust boundary: if a credential survives
+`opsmask mask`, it may be sent to an LLM. Built-in rules therefore prioritize
 high-confidence local detection with deterministic behavior.
 
 ## Source-of-truth model
@@ -16,14 +16,14 @@ configuration:
 - License: MIT, copyright Zachary Rice / Gitleaks contributors.
   See `docs/THIRD_PARTY_NOTICES.md`.
 
-The rules are not fetched at runtime. `llm-mask` ports a curated subset into
+The rules are not fetched at runtime. `opsmask` ports a curated subset into
 `internal/detect/rules/builtin.go` so masking remains local, reproducible, and
 available without network access.
 
-`llm-mask init` also must not download rules. The project README promises no
+`opsmask init` also must not download rules. The project README promises no
 network I/O, and detector updates are security-sensitive supply-chain changes.
 If online refresh is added later, it should be an explicit command such as
-`llm-mask rules update --source gitleaks --ref <tag-or-sha>` that records the
+`opsmask rules update --source gitleaks --ref <tag-or-sha>` that records the
 upstream commit and SHA-256, writes a local rules file, and requires an explicit
 trust step before activation.
 
@@ -51,7 +51,7 @@ When porting a Gitleaks rule:
      `-` and `_` from the trailing-delimiter class is unnecessary and silently
      drops keys followed by hyphen-prefixed adjacent tokens (`key=sk-…-rotated`).
      Use `(?:[^A-Za-z0-9]|$)` for these rules.
-8. Add regression tests for the `llm-mask` fixture and representative token
+8. Add regression tests for the `opsmask` fixture and representative token
    shapes before claiming support.
 
 ## Current Gitleaks-derived families
@@ -80,9 +80,9 @@ The current curated baseline covers these common secret families:
 All of these use `Destroy` policy: they are redacted and are not stored in the
 mapping database.
 
-## Local `llm-mask` extensions
+## Local `opsmask` extensions
 
-Some rules are intentionally local because `llm-mask` protects LLM-bound logs,
+Some rules are intentionally local because `opsmask` protects LLM-bound logs,
 not only source repositories:
 
 - `password_url`: URL user-password credentials.
@@ -93,7 +93,7 @@ not only source repositories:
 - `stripe_id`: Stripe resource IDs are pseudonymized, not destroyed, so incident
   analysis can correlate repeated billing objects without revealing the raw ID.
 - Hostname, IP, email, Kubernetes, UUID, MAC, and long hex ID pseudonymizers are
-  debug-oriented `llm-mask` identifiers rather than Gitleaks secret rules.
+  debug-oriented `opsmask` identifiers rather than Gitleaks secret rules.
 
 Application-specific IDs such as `user_123`, `order_abc`, and `tenant_…` remain
 custom project rules. See `docs/CUSTOM_DETECTORS.md`.
@@ -104,7 +104,7 @@ custom project rules. See `docs/CUSTOM_DETECTORS.md`.
 - No automatic init-time download of Gitleaks config.
 - No blind import of every upstream rule without false-positive review.
 - No provider API verification. Tools such as TruffleHog can verify credentials
-  by contacting providers, but `llm-mask mask` must remain local and offline.
+  by contacting providers, but `opsmask mask` must remain local and offline.
 - No model-based PII filtering in this pass. OpenAI Privacy Filter or similar
   typed-destroy PII minimization is a future opt-in feature, not part of the
   deterministic secret rules.
@@ -121,18 +121,18 @@ custom project rules. See `docs/CUSTOM_DETECTORS.md`.
    ```sh
    go test ./...
    go vet ./...
-   ./bin/llm-mask mask < skill/llm-mask/evals/files/app.log
+   ./bin/opsmask mask < skill/opsmask/evals/files/app.log
    ```
 
 Future explicit updater design:
 
-1. User runs `llm-mask rules update --source gitleaks --ref <tag-or-sha>`.
+1. User runs `opsmask rules update --source gitleaks --ref <tag-or-sha>`.
 2. The command downloads `config/gitleaks.toml`, verifies and records SHA-256,
    source URL, and upstream commit/tag.
-3. The command writes under `.llm-mask/rules/` or generates reviewed
-   `.llm-mask/config.yaml` rules.
+3. The command writes under `.opsmask/rules/` or generates reviewed
+   `.opsmask/config.yaml` rules.
 4. The rules remain inactive until the user runs an explicit trust command.
-5. Normal `llm-mask init` remains offline.
+5. Normal `opsmask init` remains offline.
 
 Supplemental references for future research:
 

@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### Changed
+
+- **Renamed project from `llm-mask` to `OpsMask`.** This is a breaking change
+  with no compatibility shim:
+  - Module path: `github.com/ching-kuo/llm-mask` → `github.com/ching-kuo/opsmask`.
+  - Binary: `llm-mask` → `opsmask`.
+  - Sentinel wire format: `⟪llm-mask:T:I⟫` / `[[llm-mask:T:I]]` →
+    `⟪opsmask:T:I⟫` / `[[opsmask:T:I]]`. Reports and mapping stores produced
+    by older versions cannot be unmasked with the new binary without manual
+    sentinel rewriting.
+  - Inert escape: `[LLM_MASK_ESCAPED_SENTINEL:…]` →
+    `[OPSMASK_ESCAPED_SENTINEL:…]`.
+  - Environment variables: `LLM_MASK_AUDIT_DIR`, `LLM_MASK_STORE_CHILD`,
+    `LLM_MASK_STORE_PATH` → `OPSMASK_AUDIT_DIR`, `OPSMASK_STORE_CHILD`,
+    `OPSMASK_STORE_PATH`.
+  - Project config directory: `.llm-mask/` → `.opsmask/`. Existing projects
+    must rename the directory and re-run `opsmask config trust`.
+  - User config / audit log directory: `~/.config/llm-mask/` →
+    `~/.config/opsmask/`.
+
 ### Added
 
 - Gitleaks-derived common secret/token rule baseline pinned to upstream commit
@@ -47,10 +67,10 @@
 
 ### Added
 
-- `llm-mask exec` subcommand for sentinel-aware follow-up commands.
+- `opsmask exec` subcommand for sentinel-aware follow-up commands.
 - Scope-tiered exec policy: `read-only`, `investigate`, and `freeform`.
 - Hostname/FQDN and contextual Kubernetes resource-name detectors.
-- JSON-lines exec audit log at `~/.config/llm-mask/exec.log`.
+- JSON-lines exec audit log at `~/.config/opsmask/exec.log`.
 - Tier-specific child environment allow-list with hard-deny stripping for
   interpreter startup and command-dispatch variables.
 - Hard deny-list for shells, debuggers, REPLs, schedulers, remote-exec helpers,
@@ -75,10 +95,10 @@
 
 - `exec` is disabled by default and user-wide config cannot enable it.
 - `--config <file>` overrides cannot enable exec. Trust is anchored to the
-  project's `.llm-mask/config.yaml` (path-bound hash); an arbitrary `--config`
+  project's `.opsmask/config.yaml` (path-bound hash); an arbitrary `--config`
   path cannot satisfy the trust gate, so its `exec` block is ignored with a
   warning.
-- `exec` preflights the audit log (`~/.config/llm-mask/exec.log`) before
+- `exec` preflights the audit log (`~/.config/opsmask/exec.log`) before
   spawning a child and refuses to run if the log is unwritable. Post-run write
   failures are surfaced to stderr so an exec invocation never leaves no audit
   trail silently.

@@ -13,8 +13,8 @@ import (
 )
 
 func TestSQLiteConcurrentSubprocessWriters(t *testing.T) {
-	if os.Getenv("LLM_MASK_STORE_CHILD") == "1" {
-		childInsert(t, os.Getenv("LLM_MASK_STORE_PATH"))
+	if os.Getenv("OPSMASK_STORE_CHILD") == "1" {
+		childInsert(t, os.Getenv("OPSMASK_STORE_PATH"))
 		return
 	}
 	path := filepath.Join(t.TempDir(), "mapping.sqlite")
@@ -25,7 +25,7 @@ func TestSQLiteConcurrentSubprocessWriters(t *testing.T) {
 	outputs := make([]bytes.Buffer, workers)
 	for i := 0; i < workers; i++ {
 		cmd := exec.Command(os.Args[0], "-test.run=TestSQLiteConcurrentSubprocessWriters")
-		cmd.Env = append(os.Environ(), "LLM_MASK_STORE_CHILD=1", "LLM_MASK_STORE_PATH="+path)
+		cmd.Env = append(os.Environ(), "OPSMASK_STORE_CHILD=1", "OPSMASK_STORE_PATH="+path)
 		cmd.Stdout = &outputs[i]
 		cmd.Stderr = &outputs[i]
 		if err := cmd.Start(); err != nil {

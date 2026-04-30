@@ -1,18 +1,18 @@
 ---
-name: llm-mask
-description: llm-mask helps Claude Code analyze logs while reducing exposure of secrets and identifiers. Use it when handling prod logs, kubectl logs, journalctl output, ssh output, requests to mask/redact/sanitize logs, or when investigating a masked entity requires a follow-up read-only command such as kubectl describe, dig, or nslookup.
+name: opsmask
+description: opsmask helps Claude Code analyze logs while reducing exposure of secrets and identifiers. Use it when handling prod logs, kubectl logs, journalctl output, ssh output, requests to mask/redact/sanitize logs, or when investigating a masked entity requires a follow-up read-only command such as kubectl describe, dig, or nslookup.
 ---
 
-# llm-mask
+# opsmask
 
-Route log-fetching commands through `llm-mask mask` before analyzing the output.
+Route log-fetching commands through `opsmask mask` before analyzing the output.
 
 Examples:
 
 ```sh
-kubectl logs deploy/api | llm-mask mask
-journalctl -u app.service | llm-mask mask
-ssh host 'tail -1000 /var/log/app.log' | llm-mask mask
+kubectl logs deploy/api | opsmask mask
+journalctl -u app.service | opsmask mask
+ssh host 'tail -1000 /var/log/app.log' | opsmask mask
 ```
 
 ## Kubernetes metadata
@@ -27,21 +27,21 @@ read `references/kubernetes.md`.
 
 If the user already pasted raw `kubectl get pods` table output, reshape it into
 one `namespace/<ns> pod/<pod> node/<node>` record per line *before* running
-`llm-mask mask`. The detectors key off those resource-noun prefixes; bare table
+`opsmask mask`. The detectors key off those resource-noun prefixes; bare table
 columns are unreliable to mask.
 
 Agents must preserve sentinel tokens verbatim:
 
-- `⟪llm-mask:<type>:<index>⟫`
-- `[[llm-mask:<type>:<index>]]`
-- `[LLM_MASK_ESCAPED_SENTINEL:...]`
+- `⟪opsmask:<type>:<index>⟫`
+- `[[opsmask:<type>:<index>]]`
+- `[OPSMASK_ESCAPED_SENTINEL:...]`
 
 Do not paraphrase, wrap, lower-case, split, or "clean up" those token forms in
 reports. They are the bridge back to the user's local mapping store.
 
 ## If something secret-looking survives masking
 
-If the output of `llm-mask mask` still contains something that obviously looks
+If the output of `opsmask mask` still contains something that obviously looks
 like a secret (a JWT, a `sk_live_...` / `sk_test_...` Stripe-style key, a
 provider token, a private key block), treat it as a masker bug, not as your
 problem to fix in the report:
@@ -56,16 +56,16 @@ The skill does not ask you to do a second-pass redaction. The masker is the
 boundary; if a secret crossed it, the right move is to surface the gap, not
 to paper over it in the agent layer.
 
-Never invoke `llm-mask unmask` from an agent session. After writing the final
-report, tell the user to run `llm-mask unmask < report.md` in their own
+Never invoke `opsmask unmask` from an agent session. After writing the final
+report, tell the user to run `opsmask unmask < report.md` in their own
 terminal.
 
 This skill is advisory, not enforcement. The safety property comes from keeping
 the mapping store local and out of LLM reach.
 
-## Follow-up commands with `llm-mask exec`
+## Follow-up commands with `opsmask exec`
 
-When investigation needs the real value behind a sentinel, **run `llm-mask exec`
+When investigation needs the real value behind a sentinel, **run `opsmask exec`
 yourself** — do not stop at writing a command list for the user. The wrapper
 resolves sentinels locally and re-masks stdout/stderr before the output reaches
 you, so you never see raw values and the masking pipeline stays intact.
@@ -76,21 +76,21 @@ Default to running. Hand a command list back to the user only when:
   commands").
 - `exec` rejected the command (`deny_layer_*` / `not_in_allow_list`) and the
   current scope tier cannot satisfy the workflow.
-- There is no `.llm-mask` mapping in the working directory, or the binary is
+- There is no `.opsmask` mapping in the working directory, or the binary is
   not available in this environment.
 
 Form:
 
 ```sh
-llm-mask exec -- <cmd> <args containing sentinels>
+opsmask exec -- <cmd> <args containing sentinels>
 ```
 
 Examples:
 
 ```sh
-llm-mask exec -- kubectl describe pod '⟪llm-mask:k8spod:0123456789abcdef⟫'
-llm-mask exec -- nslookup '[[llm-mask:hostname:0123456789abcdef]]'
-llm-mask exec -- dig '⟪llm-mask:hostname:0123456789abcdef⟫'
+opsmask exec -- kubectl describe pod '⟪opsmask:k8spod:0123456789abcdef⟫'
+opsmask exec -- nslookup '[[opsmask:hostname:0123456789abcdef]]'
+opsmask exec -- dig '⟪opsmask:hostname:0123456789abcdef⟫'
 ```
 
 The wrapper resolves sentinels locally and re-masks stdout/stderr before the
@@ -101,8 +101,8 @@ Sentinel-passing rules:
 - Pass sentinels verbatim.
 - Do not paraphrase, lowercase, ASCII-translate, split, quote-strip, or "fix"
   them.
-- Both `⟪llm-mask:type:index⟫` and `[[llm-mask:type:index]]` are accepted.
-- `[LLM_MASK_ESCAPED_SENTINEL:...]` is inert source text; pass it through
+- Both `⟪opsmask:type:index⟫` and `[[opsmask:type:index]]` are accepted.
+- `[OPSMASK_ESCAPED_SENTINEL:...]` is inert source text; pass it through
   unchanged and do not try to decode it.
 
 Do not use shell redirects (`>`, `>>`, `tee`, `&>`), background writes, or

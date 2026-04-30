@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/ching-kuo/llm-mask/internal/config"
-	"github.com/ching-kuo/llm-mask/internal/detect"
-	"github.com/ching-kuo/llm-mask/internal/pseudo"
-	"github.com/ching-kuo/llm-mask/internal/store"
+	"github.com/ching-kuo/opsmask/internal/config"
+	"github.com/ching-kuo/opsmask/internal/detect"
+	"github.com/ching-kuo/opsmask/internal/pseudo"
+	"github.com/ching-kuo/opsmask/internal/store"
 )
 
 type runtimeEnv struct {
@@ -49,11 +49,11 @@ func buildRuntime(opts *Options) (*runtimeEnv, error) {
 		}
 		loaded.Rules = append(loaded.Rules, explicit.Rules...)
 		loaded.DenyList = append(loaded.DenyList, explicit.DenyList...)
-		// Trust is anchored to the project's .llm-mask/config.yaml (see config.IsTrusted).
+		// Trust is anchored to the project's .opsmask/config.yaml (see config.IsTrusted).
 		// An arbitrary --config file cannot satisfy that gate, so its exec block must
 		// not enable command execution. Warn loudly and ignore the exec settings.
 		if explicit.ProjectExec.Enabled {
-			fmt.Fprintf(os.Stderr, "warning: exec settings in --config %s are ignored; exec must be enabled via trusted .llm-mask/config.yaml\n", opts.Config)
+			fmt.Fprintf(os.Stderr, "warning: exec settings in --config %s are ignored; exec must be enabled via trusted .opsmask/config.yaml\n", opts.Config)
 		}
 	}
 	rules := append(builtins, loaded.Rules...)

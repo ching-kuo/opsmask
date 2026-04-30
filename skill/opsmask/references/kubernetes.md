@@ -12,14 +12,14 @@ tables or full YAML dumps.
 Good shapes:
 
 ```sh
-kubectl get pods -n <namespace> -o name | llm-mask mask --summary
+kubectl get pods -n <namespace> -o name | opsmask mask --summary
 
 kubectl get pods -A -o go-template='{{range .items}}{{printf "namespace/%s pod/%s node/%s phase=%s restarts=" .metadata.namespace .metadata.name .spec.nodeName .status.phase}}{{range .status.containerStatuses}}{{printf "%d," .restartCount}}{{end}}{{printf "\n"}}{{end}}' \
-  | llm-mask mask --summary
+  | opsmask mask --summary
 
 kubectl get pods -A -o json \
   | jq -r '.items[] | "namespace/\(.metadata.namespace) pod/\(.metadata.name) node/\(.spec.nodeName // "none") phase=\(.status.phase) restarts=\([.status.containerStatuses[]?.restartCount] | join(","))"' \
-  | llm-mask mask --summary
+  | opsmask mask --summary
 ```
 
 Why this shape works:
@@ -47,7 +47,7 @@ When responding:
 - Keep namespace context with pod follow-ups. If masked input came from all
   namespaces, include `-n <masked namespace token>` with the masked pod token.
   When a `namespace/<name>` or `ns/<name>` sentinel is used as a `kubectl -n` or
-  `--namespace` value, `llm-mask exec` resolves it locally and passes only the
+  `--namespace` value, `opsmask exec` resolves it locally and passes only the
   bare namespace name to `kubectl`.
 - If suggesting shell commands with ASCII sentinels, quote the sentinel or use
   `noglob` in zsh.
@@ -55,13 +55,13 @@ When responding:
 Example follow-up command:
 
 ```sh
-llm-mask exec -- kubectl describe -n '[[llm-mask:k8snamespace:aaaaaaaaaaaaaaaa]]' '[[llm-mask:k8spod:0123456789abcdef]]'
+opsmask exec -- kubectl describe -n '[[opsmask:k8snamespace:aaaaaaaaaaaaaaaa]]' '[[opsmask:k8spod:0123456789abcdef]]'
 ```
 
 zsh-safe alternative:
 
 ```sh
-noglob llm-mask exec -- kubectl describe -n [[llm-mask:k8snamespace:aaaaaaaaaaaaaaaa]] [[llm-mask:k8spod:0123456789abcdef]]
+noglob opsmask exec -- kubectl describe -n [[opsmask:k8snamespace:aaaaaaaaaaaaaaaa]] [[opsmask:k8spod:0123456789abcdef]]
 ```
 
 ## Common failure: NotFound after masking
@@ -69,14 +69,14 @@ noglob llm-mask exec -- kubectl describe -n [[llm-mask:k8snamespace:aaaaaaaaaaaa
 If a command like this returns masked NotFound:
 
 ```sh
-llm-mask exec -- kubectl describe '[[llm-mask:k8spod:0123456789abcdef]]'
+opsmask exec -- kubectl describe '[[opsmask:k8spod:0123456789abcdef]]'
 ```
 
 the token may have resolved correctly, but `kubectl` searched the current
 namespace. Retry with the namespace:
 
 ```sh
-llm-mask exec -- kubectl describe -n '[[llm-mask:k8snamespace:aaaaaaaaaaaaaaaa]]' '[[llm-mask:k8spod:0123456789abcdef]]'
+opsmask exec -- kubectl describe -n '[[opsmask:k8snamespace:aaaaaaaaaaaaaaaa]]' '[[opsmask:k8spod:0123456789abcdef]]'
 ```
 
 `kubectl describe -A pod/<name>` is not a replacement; Kubernetes cannot

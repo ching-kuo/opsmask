@@ -10,10 +10,10 @@ import (
 	"syscall"
 	"unicode/utf8"
 
-	"github.com/ching-kuo/llm-mask/internal/detect"
-	"github.com/ching-kuo/llm-mask/internal/ioutil"
-	"github.com/ching-kuo/llm-mask/internal/policy"
-	"github.com/ching-kuo/llm-mask/internal/pseudo"
+	"github.com/ching-kuo/opsmask/internal/detect"
+	"github.com/ching-kuo/opsmask/internal/ioutil"
+	"github.com/ching-kuo/opsmask/internal/policy"
+	"github.com/ching-kuo/opsmask/internal/pseudo"
 )
 
 const (

@@ -1,6 +1,6 @@
 package rules
 
-import "github.com/ching-kuo/llm-mask/internal/policy"
+import "github.com/ching-kuo/opsmask/internal/policy"
 
 type Spec struct {
 	Name, Type, Pattern string
@@ -14,7 +14,7 @@ type Spec struct {
 // Builtins returns compact, high-precision Go RE2 patterns.
 //
 // Common secret/token rules are derived from the Gitleaks default configuration
-// unless marked as a local llm-mask extension. See docs/DETECTOR_RULES.md for
+// unless marked as a local opsmask extension. See docs/DETECTOR_RULES.md for
 // the pinned upstream revision and porting rationale.
 func Builtins() []Spec {
 	return []Spec{
@@ -47,7 +47,7 @@ func Builtins() []Spec {
 		k8s("KubernetesPDB", "k8spdb", `pdb`, "pdb"),
 		k8s("KubernetesServiceAccount", "k8sserviceaccount", `(?:sa|serviceaccounts?)`, "sa", "serviceaccount"),
 		// Gitleaks-derived common secret/token rules. Regexes are translated to
-		// llm-mask specs with SubMatch selecting the secret value when the
+		// opsmask specs with SubMatch selecting the secret value when the
 		// upstream rule includes surrounding delimiter context.
 		secret("JWT", "jwt", `\b(ey[A-Za-z0-9]{17,}\.ey[A-Za-z0-9/_-]{17,}\.(?:[A-Za-z0-9/_-]{10,}={0,2})?)(?:[^A-Za-z0-9/_-]|$)`, []string{"ey"}, 4096, 1, 3),
 		secret("PEMPrivateKey", "pem_private_key", `(?i)-----BEGIN[ A-Z0-9_-]{0,100}PRIVATE KEY(?: BLOCK)?-----[\s\S-]{64,}?KEY(?: BLOCK)?-----`, []string{"-----BEGIN", "-----begin"}, 4096, 0, 0),
@@ -89,7 +89,7 @@ func Builtins() []Spec {
 		secret("LinearAPIKey", "linear_token", `\b(lin_api_[A-Za-z0-9]{40})(?:[^A-Za-z0-9]|$)`, []string{"lin_api_"}, 128, 1, 3),
 		secret("PostmanAPIKey", "postman_key", `\b(PMAK-[a-fA-F0-9]{24}-[a-fA-F0-9]{34})(?:[^A-Za-z0-9]|$)`, []string{"PMAK-"}, 128, 1, 3),
 
-		// Local llm-mask extensions for LLM-bound log masking gaps not covered by
+		// Local opsmask extensions for LLM-bound log masking gaps not covered by
 		// the curated Gitleaks-derived baseline.
 		{Name: "PasswordURL", Type: "password_url", Pattern: `\b[a-zA-Z][a-zA-Z0-9+.-]*://[^\s:/@]+:[^\s/@]+@[^\s]+`, Policy: policy.Destroy, Keywords: []string{"://"}, MaxMatchSpan: 4096},
 		{Name: "GCPServiceAccount", Type: "gcp_sa", Pattern: `"type"\s*:\s*"service_account"`, Policy: policy.Destroy, Keywords: []string{"service_account"}, MaxMatchSpan: 1024},

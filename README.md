@@ -1,4 +1,4 @@
-# llm-mask
+# OpsMask
 
 A local-only Go CLI that pseudonymizes secrets and identifiers before logs go
 to an LLM, then restores them at a TTY when the report comes back.
@@ -12,19 +12,19 @@ to an LLM, then restores them at a TTY when the report comes back.
   infrastructure identifiers; project-local rules cover application IDs.
 
 ```text
-                ┌───────────────┐    masked     ┌─────────┐
-   raw logs ──▶ │ llm-mask mask │ ────────────▶ │   LLM   │
-                └───────────────┘               └────┬────┘
-                                                     │ masked report
-                                  ┌──────────────┐   │
-   plaintext ◀───── (TTY) ─────── │ llm-mask     │ ◀─┘
-                                  │   unmask     │
+                ┌──────────────┐    masked     ┌─────────┐
+   raw logs ──▶ │ opsmask mask │ ────────────▶ │   LLM   │
+                └──────────────┘               └────┬────┘
+                                                    │ masked report
+                                  ┌──────────────┐  │
+   plaintext ◀───── (TTY) ─────── │   opsmask    │ ◀┘
+                                  │    unmask    │
                                   └──────────────┘
 ```
 
 ## When to use it
 
-Use `llm-mask` whenever you want an LLM to help with **real production
+Use OpsMask whenever you want an LLM to help with **real production
 data** that contains values you would not paste into a public chat:
 
 - `kubectl logs`, `kubectl describe`, or `kubectl get -o ...` output.
@@ -39,31 +39,31 @@ It is **not** the right tool for:
 - Documents where pseudonyms break meaning (e.g. legal contracts,
   human-readable narratives).
 - Defending against a malicious LLM that ignores instructions to preserve
-  sentinels — `llm-mask` is a leakage-reduction tool, not a sandbox.
+  sentinels — OpsMask is a leakage-reduction tool, not a sandbox.
 
 ## Install
 
-Download a release archive containing the `llm-mask` binary and the
+Download a release archive containing the `opsmask` binary and the
 companion skill, or build locally:
 
 ```sh
-go build -o ./bin/llm-mask ./cmd/llm-mask
+go build -o ./bin/opsmask ./cmd/opsmask
 ```
 
 ## Quick start
 
 ```sh
 # 1. Initialize a project (one-time)
-llm-mask init
-llm-mask config trust
+opsmask init
+opsmask config trust
 
 # 2. Mask logs before sending them to the LLM
-kubectl logs deploy/api | llm-mask mask --summary > masked.log
+kubectl logs deploy/api | opsmask mask --summary > masked.log
 
 # 3. Paste masked.log into your LLM session, get a report back
 
 # 4. Restore sentinels at your terminal (never inside the agent)
-llm-mask unmask < report.md
+opsmask unmask < report.md
 ```
 
 `unmask` refuses non-TTY stdout to reduce the chance of accidentally piping
@@ -77,10 +77,10 @@ Input:
 customer Example Corp from alice@example.com hit 10.0.0.1
 ```
 
-After `llm-mask mask`:
+After `opsmask mask`:
 
 ```text
-customer Example Corp from ⟪llm-mask:email:01af⟫ hit ⟪llm-mask:ip4:7c93⟫
+customer Example Corp from ⟪opsmask:email:01af3c1d2b4e5f60⟫ hit ⟪opsmask:ip4:7c93a4ed1b209f88⟫
 ```
 
 The LLM works on the masked text and must echo sentinels verbatim. Then
@@ -90,15 +90,15 @@ The LLM works on the masked text and must echo sentinels verbatim. Then
 
 | Command | Purpose |
 | --- | --- |
-| `llm-mask init` | Scaffold `.llm-mask/` (mode `0700`) and a commented `config.yaml`. |
-| `llm-mask config` | Show current config status. |
-| `llm-mask config init` | Same scaffold as `init`, from the config command group. |
-| `llm-mask config trust` | Trust the current project config (path + SHA-256 bound). |
-| `llm-mask mask [file\|-]` | Mask stdin or a file. Flags: `--summary`, `--ascii-tokens`, `--max-line` (default `16MiB`). |
-| `llm-mask unmask [file\|-]` | Restore tokens. TTY-only. |
-| `llm-mask exec -- <cmd> [args...]` | Run a follow-up command with sentinels in argv; output is re-masked before it returns. |
-| `llm-mask mapping list [--type T] [--limit N]` | List pseudonyms (no plaintext). TTY-only. |
-| `llm-mask mapping prune --older-than <duration> [--type T]` | Delete old mapping rows. `--older-than` is required. |
+| `opsmask init` | Scaffold `.opsmask/` (mode `0700`) and a commented `config.yaml`. |
+| `opsmask config` | Show current config status. |
+| `opsmask config init` | Same scaffold as `init`, from the config command group. |
+| `opsmask config trust` | Trust the current project config (path + SHA-256 bound). |
+| `opsmask mask [file\|-]` | Mask stdin or a file. Flags: `--summary`, `--ascii-tokens`, `--max-line` (default `16MiB`). |
+| `opsmask unmask [file\|-]` | Restore tokens. TTY-only. |
+| `opsmask exec -- <cmd> [args...]` | Run a follow-up command with sentinels in argv; output is re-masked before it returns. |
+| `opsmask mapping list [--type T] [--limit N]` | List pseudonyms (no plaintext). TTY-only. |
+| `opsmask mapping prune --older-than <duration> [--type T]` | Delete old mapping rows. `--older-than` is required. |
 
 Global flags: `--config <path>`, `--mapping <path>`, `--verbose`.
 
@@ -107,10 +107,10 @@ Global flags: `--config <path>`, `--mapping <path>`, `--verbose`.
 Three forms can appear in masked output. Agents must preserve them
 character-for-character:
 
-- Unicode sentinel: `⟪llm-mask:<type>:<index>⟫` (default).
-- ASCII fallback: `[[llm-mask:<type>:<index>]]` (used when input is
+- Unicode sentinel: `⟪opsmask:<type>:<index>⟫` (default).
+- ASCII fallback: `[[opsmask:<type>:<index>]]` (used when input is
   strict-ASCII or when `--ascii-tokens` is passed).
-- Inert escape: `[LLM_MASK_ESCAPED_SENTINEL:<base64url>]` (planted before
+- Inert escape: `[OPSMASK_ESCAPED_SENTINEL:<base64url>]` (planted before
   masking when source text already looks like a sentinel; decoded back to
   literal bytes during `unmask`).
 
@@ -166,11 +166,11 @@ project rules — see [docs/CUSTOM_DETECTORS.md](docs/CUSTOM_DETECTORS.md).
 
 ## Configuration
 
-Project config lives at `.llm-mask/config.yaml`. It is **ignored until
+Project config lives at `.opsmask/config.yaml`. It is **ignored until
 trusted**:
 
 ```sh
-llm-mask config trust
+opsmask config trust
 ```
 
 Trust is bound to the file's resolved path plus a SHA-256 of its contents.
@@ -181,7 +181,7 @@ are silently ignored when loaded from an override path.
 Example:
 
 ```yaml
-# .llm-mask/config.yaml
+# .opsmask/config.yaml
 literals: []
 regex_rules:
   - name: app-user-id
@@ -203,14 +203,14 @@ after masking signals the rule set missed something it should have destroyed.
 
 ## Follow-up commands with `exec`
 
-When investigating a masked entity, `llm-mask exec` runs a read-only
+When investigating a masked entity, `opsmask exec` runs a read-only
 follow-up such as `kubectl describe`, `dig`, or `nslookup` while keeping
 plaintext out of the agent's context. The wrapper resolves sentinels in
 argv locally, runs the child, and re-masks stdout/stderr before they return.
 
 ```sh
-llm-mask exec -- kubectl describe pod '⟪llm-mask:k8spod:0123456789abcdef⟫'
-llm-mask exec -- nslookup '[[llm-mask:hostname:0123456789abcdef]]'
+opsmask exec -- kubectl describe pod '⟪opsmask:k8spod:0123456789abcdef⟫'
+opsmask exec -- nslookup '[[opsmask:hostname:0123456789abcdef]]'
 ```
 
 `exec` is **disabled by default** and only enabled by a trusted project
@@ -242,7 +242,7 @@ exec:
 
 `curl` and `wget` are not in any baseline; allow them explicitly when needed.
 
-`exec` writes JSON-lines audit records to `~/.config/llm-mask/exec.log`
+`exec` writes JSON-lines audit records to `~/.config/opsmask/exec.log`
 (mode `0600`). Records include unresolved argv, scope, policy match, exit
 code, duration, and env-shaping counts. The audit log is preflighted before
 any child runs: if the file or directory is unwritable, `exec` refuses with
@@ -260,7 +260,7 @@ wins.
 
 ## Limitations
 
-`llm-mask` reduces leakage on the CLI pipe path. It does **not** protect:
+OpsMask reduces leakage on the CLI pipe path. It does **not** protect:
 
 - Screenshots, clipboard, or copy-paste that bypasses the CLI.
 - Uploads to a chat UI's file picker that skip the masking pipeline.
@@ -272,8 +272,8 @@ wins.
 Pseudonymization is deterministic per `user_secret`. That property is
 intentional — it lets correlated lines stay correlated — but it means an LLM
 that echoes a sentinel back in plaintext form leaks information. Treat token
-reflection as an expected failure mode, and keep `~/.config/llm-mask` and
-project `.llm-mask/` directories out of cloud-sync and shared-backup paths.
+reflection as an expected failure mode, and keep `~/.config/opsmask` and
+project `.opsmask/` directories out of cloud-sync and shared-backup paths.
 
 `exec` runs a real child process after resolving sentinels in argv. Scope
 tiers and the hard deny-list reduce that surface, but they do not provide

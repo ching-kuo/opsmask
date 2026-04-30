@@ -1,10 +1,10 @@
 # Kubernetes real-case workflow example (non-identifiable)
 
-This example shows how to use `llm-mask` in a real Kubernetes investigation
+This example shows how to use `opsmask` in a real Kubernetes investigation
 without putting real cluster identifiers into the repository. The workflow is:
 collect only the minimum read-only data needed, mask it before analysis, preserve
-sentinel tokens verbatim, and run any follow-up lookup through `llm-mask exec`.
-Never run `llm-mask unmask` from an agent session.
+sentinel tokens verbatim, and run any follow-up lookup through `opsmask exec`.
+Never run `opsmask unmask` from an agent session.
 
 ## 1. Capture metadata in a mask-friendly shape
 
@@ -14,15 +14,15 @@ resource references reliably:
 
 ```sh
 kubectl get pods -A -o name \
-  | llm-mask mask --summary --ascii-tokens > masked-pods.txt
+  | opsmask mask --summary --ascii-tokens > masked-pods.txt
 ```
 
 Representative masked output:
 
 ```text
-[[llm-mask:k8spod:1111111111111111]]
-[[llm-mask:k8spod:2222222222222222]]
-[[llm-mask:k8spod:3333333333333333]]
+[[opsmask:k8spod:1111111111111111]]
+[[opsmask:k8spod:2222222222222222]]
+[[opsmask:k8spod:3333333333333333]]
 ```
 
 Representative summary:
@@ -46,14 +46,14 @@ easier for an LLM to reason over than the default table:
 
 ```sh
 kubectl get pods -A -o go-template='{{range .items}}{{printf "namespace/%s pod/%s node/%s phase=%s restarts=" .metadata.namespace .metadata.name .spec.nodeName .status.phase}}{{range .status.containerStatuses}}{{printf "%d," .restartCount}}{{end}}{{printf "\n"}}{{end}}' \
-  | llm-mask mask --summary --ascii-tokens > masked-pod-fields.txt
+  | opsmask mask --summary --ascii-tokens > masked-pod-fields.txt
 ```
 
 Representative masked output:
 
 ```text
-[[llm-mask:k8snamespace:aaaaaaaaaaaaaaaa]] [[llm-mask:k8spod:bbbbbbbbbbbbbbbb]] [[llm-mask:k8snode:cccccccccccccccc]] phase=Running restarts=0,
-[[llm-mask:k8snamespace:dddddddddddddddd]] [[llm-mask:k8spod:eeeeeeeeeeeeeeee]] [[llm-mask:k8snode:ffffffffffffffff]] phase=Pending restarts=0,
+[[opsmask:k8snamespace:aaaaaaaaaaaaaaaa]] [[opsmask:k8spod:bbbbbbbbbbbbbbbb]] [[opsmask:k8snode:cccccccccccccccc]] phase=Running restarts=0,
+[[opsmask:k8snamespace:dddddddddddddddd]] [[opsmask:k8spod:eeeeeeeeeeeeeeee]] [[opsmask:k8snode:ffffffffffffffff]] phase=Pending restarts=0,
 ```
 
 The plain fields remain readable (`phase`, `restarts`) while namespace, pod, and
@@ -71,7 +71,7 @@ specific columns or names you want pseudonymized.
 
 If you do collect from all namespaces, keep the namespace context locally.
 `kubectl get pods -A -o name` emits `pod/<name>` values without the namespace,
-so a later `kubectl describe '[[llm-mask:k8spod:...]]'` will look in the
+so a later `kubectl describe '[[opsmask:k8spod:...]]'` will look in the
 current namespace and may return a masked NotFound error even though the token
 resolved correctly.
 
@@ -80,46 +80,46 @@ resolved correctly.
 Safe prompt shape:
 
 ```text
-Here is masked Kubernetes metadata. Preserve all llm-mask sentinels verbatim.
+Here is masked Kubernetes metadata. Preserve all opsmask sentinels verbatim.
 Which pod should I inspect next, and what namespace-qualified read-only command
 should I run?
 
-[[llm-mask:k8snamespace:aaaaaaaaaaaaaaaa]] [[llm-mask:k8spod:bbbbbbbbbbbbbbbb]] [[llm-mask:k8snode:cccccccccccccccc]] phase=Running restarts=0,
-[[llm-mask:k8snamespace:dddddddddddddddd]] [[llm-mask:k8spod:eeeeeeeeeeeeeeee]] [[llm-mask:k8snode:ffffffffffffffff]] phase=Pending restarts=0,
+[[opsmask:k8snamespace:aaaaaaaaaaaaaaaa]] [[opsmask:k8spod:bbbbbbbbbbbbbbbb]] [[opsmask:k8snode:cccccccccccccccc]] phase=Running restarts=0,
+[[opsmask:k8snamespace:dddddddddddddddd]] [[opsmask:k8spod:eeeeeeeeeeeeeeee]] [[opsmask:k8snode:ffffffffffffffff]] phase=Pending restarts=0,
 ```
 
 The agent can refer to the sentinels, but it should not try to decode or rewrite
 them.
 
-## 4. Run a read-only follow-up through `llm-mask exec`
+## 4. Run a read-only follow-up through `opsmask exec`
 
 After a project explicitly enables trusted read-only exec, pass the selected
 namespace and pod sentinels verbatim:
 
 ```sh
-llm-mask exec -- kubectl describe -n '[[llm-mask:k8snamespace:aaaaaaaaaaaaaaaa]]' '[[llm-mask:k8spod:bbbbbbbbbbbbbbbb]]'
+opsmask exec -- kubectl describe -n '[[opsmask:k8snamespace:aaaaaaaaaaaaaaaa]]' '[[opsmask:k8spod:bbbbbbbbbbbbbbbb]]'
 ```
 
 When a `namespace/<name>` or `ns/<name>` sentinel is used as a `kubectl -n` or
-`--namespace` value, `llm-mask exec` resolves it locally and passes only the bare
+`--namespace` value, `opsmask exec` resolves it locally and passes only the bare
 namespace name to `kubectl`. The pod sentinel remains a full `pod/<name>`
 resource reference.
 
 Quote ASCII sentinels in shell commands. In zsh, an unquoted token like
-`[[llm-mask:k8spod:2222222222222222]]` is treated as a glob pattern and can
-fail before `llm-mask` receives it:
+`[[opsmask:k8spod:2222222222222222]]` is treated as a glob pattern and can
+fail before `opsmask` receives it:
 
 ```text
-zsh: no matches found: [[llm-mask:k8spod:2222222222222222]]
+zsh: no matches found: [[opsmask:k8spod:2222222222222222]]
 ```
 
 Use single quotes, or prefix the command with `noglob`:
 
 ```sh
-noglob llm-mask exec -- kubectl describe -n [[llm-mask:k8snamespace:aaaaaaaaaaaaaaaa]] [[llm-mask:k8spod:bbbbbbbbbbbbbbbb]]
+noglob opsmask exec -- kubectl describe -n [[opsmask:k8snamespace:aaaaaaaaaaaaaaaa]] [[opsmask:k8spod:bbbbbbbbbbbbbbbb]]
 ```
 
-`llm-mask exec` resolves the sentinel locally for `kubectl`, then masks
+`opsmask exec` resolves the sentinel locally for `kubectl`, then masks
 stdout/stderr before returning output to the agent.
 
 A namespace-qualified `kubectl describe` follow-up was smoke-tested against a
@@ -128,7 +128,7 @@ real cluster with output suppressed and exited successfully.
 Safe metadata-only permission checks can also be routed through `exec`:
 
 ```sh
-llm-mask exec -- kubectl auth can-i get pods --all-namespaces
+opsmask exec -- kubectl auth can-i get pods --all-namespaces
 ```
 
 Example output:

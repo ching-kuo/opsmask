@@ -7,7 +7,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/ching-kuo/llm-mask/internal/tty"
+	"github.com/ching-kuo/opsmask/internal/tty"
 	"github.com/spf13/cobra"
 )
 

@@ -6,17 +6,17 @@ import (
 )
 
 var (
-	tokenRe = regexp.MustCompile(`(?:⟪llm-mask:([a-z0-9_]+):([0-9a-f]{16})⟫)|(?:\[\[llm-mask:([a-z0-9_]+):([0-9a-f]{16})\]\])`)
-	inertRe = regexp.MustCompile(`\[LLM_MASK_ESCAPED_SENTINEL:([A-Za-z0-9_-]+)\]`)
+	tokenRe = regexp.MustCompile(`(?:⟪opsmask:([a-z0-9_]+):([0-9a-f]{16})⟫)|(?:\[\[opsmask:([a-z0-9_]+):([0-9a-f]{16})\]\])`)
+	inertRe = regexp.MustCompile(`\[OPSMASK_ESCAPED_SENTINEL:([A-Za-z0-9_-]+)\]`)
 )
 
 type Token struct{ Type, Index string }
 
 func RenderToken(typ, index string, ascii bool) string {
 	if ascii {
-		return "[[llm-mask:" + typ + ":" + index + "]]"
+		return "[[opsmask:" + typ + ":" + index + "]]"
 	}
-	return "⟪llm-mask:" + typ + ":" + index + "⟫"
+	return "⟪opsmask:" + typ + ":" + index + "⟫"
 }
 
 func ParseToken(s []byte) (Token, bool) {
@@ -35,7 +35,7 @@ func TokenRegexp() *regexp.Regexp { return tokenRe }
 func InertEscape(in []byte) []byte {
 	return tokenRe.ReplaceAllFunc(in, func(m []byte) []byte {
 		enc := base64.RawURLEncoding.EncodeToString(m)
-		return []byte("[LLM_MASK_ESCAPED_SENTINEL:" + enc + "]")
+		return []byte("[OPSMASK_ESCAPED_SENTINEL:" + enc + "]")
 	})
 }
 

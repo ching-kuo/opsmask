@@ -1,6 +1,6 @@
 /bin/
 /.omx/
-/.llm-mask/
+/.opsmask/
 /.code-review-graph/
 *.sqlite
 *.sqlite-*

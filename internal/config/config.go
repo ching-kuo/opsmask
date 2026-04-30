@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ching-kuo/llm-mask/internal/detect"
-	"github.com/ching-kuo/llm-mask/internal/exec/denybase"
-	"github.com/ching-kuo/llm-mask/internal/policy"
+	"github.com/ching-kuo/opsmask/internal/detect"
+	"github.com/ching-kuo/opsmask/internal/exec/denybase"
+	"github.com/ching-kuo/opsmask/internal/policy"
 	"gopkg.in/yaml.v3"
 )
 
@@ -168,7 +168,7 @@ func Load(cwd string, stderr func(string), requireProjectTrust bool) (Loaded, er
 		out.DenyList = append(out.DenyList, cfg.DenyList...)
 		out.UserExec = cfg.Exec
 		if cfg.Exec.Enabled {
-			msg := fmt.Sprintf("user-wide exec.enabled in %s is ignored; enable exec only in a trusted project .llm-mask/config.yaml", homeCfg)
+			msg := fmt.Sprintf("user-wide exec.enabled in %s is ignored; enable exec only in a trusted project .opsmask/config.yaml", homeCfg)
 			out.Warnings = append(out.Warnings, msg)
 			if stderr != nil {
 				stderr(msg)
@@ -194,7 +194,7 @@ func Load(cwd string, stderr func(string), requireProjectTrust bool) (Loaded, er
 			}
 			out.Untrusted = true
 			summary := summarizeUntrusted(project)
-			msg := "project .llm-mask/config.yaml is untrusted; run `llm-mask config trust` to enable its rules" + summary
+			msg := "project .opsmask/config.yaml is untrusted; run `opsmask config trust` to enable its rules" + summary
 			out.Warnings = append(out.Warnings, msg)
 			if stderr != nil {
 				stderr(msg)
@@ -376,7 +376,7 @@ func findProjectConfig(cwd string) string {
 		cwd, _ = os.Getwd()
 	}
 	for {
-		p := filepath.Join(cwd, ".llm-mask", "config.yaml")
+		p := filepath.Join(cwd, ".opsmask", "config.yaml")
 		if fileExists(p) {
 			return p
 		}

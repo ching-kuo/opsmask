@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/ching-kuo/llm-mask/internal/config"
-	"github.com/ching-kuo/llm-mask/internal/engine"
+	"github.com/ching-kuo/opsmask/internal/config"
+	"github.com/ching-kuo/opsmask/internal/engine"
 	"github.com/spf13/cobra"
 )
 

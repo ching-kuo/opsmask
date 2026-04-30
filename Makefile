@@ -1,9 +1,9 @@
-BINARY ?= llm-mask
+BINARY ?= opsmask
 
 .PHONY: build test lint fmt fuzz bench
 
 build:
-	go build -o bin/$(BINARY) ./cmd/llm-mask
+	go build -o bin/$(BINARY) ./cmd/opsmask
 
 test:
 	go test ./...

@@ -9,10 +9,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/ching-kuo/llm-mask/internal/detect"
-	"github.com/ching-kuo/llm-mask/internal/engine"
-	maskio "github.com/ching-kuo/llm-mask/internal/ioutil"
-	"github.com/ching-kuo/llm-mask/internal/pseudo"
+	"github.com/ching-kuo/opsmask/internal/detect"
+	"github.com/ching-kuo/opsmask/internal/engine"
+	maskio "github.com/ching-kuo/opsmask/internal/ioutil"
+	"github.com/ching-kuo/opsmask/internal/pseudo"
 )
 
 type RunOptions struct {

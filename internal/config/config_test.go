@@ -10,7 +10,7 @@ import (
 func TestTrustPathAndContent(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	dir := filepath.Join(t.TempDir(), ".llm-mask")
+	dir := filepath.Join(t.TempDir(), ".opsmask")
 	if err := os.Mkdir(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}

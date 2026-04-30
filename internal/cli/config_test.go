@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	configpkg "github.com/ching-kuo/llm-mask/internal/config"
+	configpkg "github.com/ching-kuo/opsmask/internal/config"
 )
 
 func TestConfigTrustCreatesMissingProjectConfig(t *testing.T) {
@@ -21,7 +21,7 @@ func TestConfigTrustCreatesMissingProjectConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := filepath.Join(cwd, ".llm-mask", "config.yaml")
+	cfg := filepath.Join(cwd, ".opsmask", "config.yaml")
 	info, err := os.Stat(cfg)
 	if err != nil {
 		t.Fatalf("config.yaml was not created: %v", err)
@@ -43,7 +43,7 @@ func TestConfigTrustCreatesMissingProjectConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	if dirInfo.Mode().Perm()&0o077 != 0 {
-		t.Fatalf(".llm-mask permissions = %o, want private", dirInfo.Mode().Perm())
+		t.Fatalf(".opsmask permissions = %o, want private", dirInfo.Mode().Perm())
 	}
 	ok, err := configpkg.IsTrusted(cfg)
 	if err != nil {
@@ -68,10 +68,10 @@ func TestConfigCommandPromptsToInitialize(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(cwd, ".llm-mask", "config.yaml")); err != nil {
+	if _, err := os.Stat(filepath.Join(cwd, ".opsmask", "config.yaml")); err != nil {
 		t.Fatalf("config.yaml was not created: %v", err)
 	}
-	if !strings.Contains(stderr, "Initialize now?") || !strings.Contains(stderr, "llm-mask config trust") {
+	if !strings.Contains(stderr, "Initialize now?") || !strings.Contains(stderr, "opsmask config trust") {
 		t.Fatalf("stderr = %q, want first-run initialization prompt and trust hint", stderr)
 	}
 }
@@ -82,10 +82,10 @@ func TestConfigTrustRepairsCommentOnlyProjectConfig(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 	cwd := t.TempDir()
 	t.Chdir(cwd)
-	if err := os.Mkdir(".llm-mask", 0o700); err != nil {
+	if err := os.Mkdir(".opsmask", 0o700); err != nil {
 		t.Fatal(err)
 	}
-	cfg := filepath.Join(cwd, ".llm-mask", "config.yaml")
+	cfg := filepath.Join(cwd, ".opsmask", "config.yaml")
 	if err := os.WriteFile(cfg, []byte("# literals: []\n# regex_rules: []\n# deny_list: []\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +108,7 @@ func TestConfigTrustRepairsCommentOnlyProjectConfig(t *testing.T) {
 	}
 }
 
-// --config must NOT enable exec, since trust is bound to .llm-mask/config.yaml
+// --config must NOT enable exec, since trust is bound to .opsmask/config.yaml
 // (path-anchored hash). An LLM-reachable bypass would defeat the trust gate.
 func TestExecConfigOverrideCannotEnableExec(t *testing.T) {
 	home := t.TempDir()

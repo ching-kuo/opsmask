@@ -65,5 +65,5 @@ func userConfigPath(name string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, "llm-mask", name), nil
+	return filepath.Join(dir, "opsmask", name), nil
 }

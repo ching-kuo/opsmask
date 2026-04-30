@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/ching-kuo/llm-mask/internal/cli"
+	"github.com/ching-kuo/opsmask/internal/cli"
 )
 
 var version = "dev"

@@ -7,8 +7,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/ching-kuo/llm-mask/internal/config"
-	maskexec "github.com/ching-kuo/llm-mask/internal/exec"
+	"github.com/ching-kuo/opsmask/internal/config"
+	maskexec "github.com/ching-kuo/opsmask/internal/exec"
 	"github.com/spf13/cobra"
 )
 
@@ -16,7 +16,7 @@ func newExec(opts *Options) *cobra.Command {
 	var timeout string
 	cmd := &cobra.Command{
 		Use:   "exec [--timeout duration] -- <command> [args...]",
-		Short: "Resolve llm-mask sentinels into a read-only follow-up command and re-mask output",
+		Short: "Resolve opsmask sentinels into a read-only follow-up command and re-mask output",
 		Args: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 0 {
 				return userErr("exec requires a command after --")
@@ -57,11 +57,11 @@ func newExec(opts *Options) *cobra.Command {
 				return CodeError{Code: code}
 			}
 			if rt.loaded.Untrusted {
-				fmt.Fprintln(cmd.ErrOrStderr(), "exec disabled: project .llm-mask/config.yaml is untrusted; run `llm-mask config trust`")
+				fmt.Fprintln(cmd.ErrOrStderr(), "exec disabled: project .opsmask/config.yaml is untrusted; run `opsmask config trust`")
 				return fail(125, "untrusted")
 			}
 			if !cfg.Enabled {
-				fmt.Fprintln(cmd.ErrOrStderr(), "exec disabled in this project (set exec.enabled: true in trusted .llm-mask/config.yaml)")
+				fmt.Fprintln(cmd.ErrOrStderr(), "exec disabled in this project (set exec.enabled: true in trusted .opsmask/config.yaml)")
 				return fail(125, "disabled")
 			}
 			d := cfg.DefaultTimeout
@@ -92,7 +92,7 @@ func newExec(opts *Options) *cobra.Command {
 			rec.EnvDenyCount = env.DenyCount
 			rec.DenyOptOut = cfg.DenyOptOut
 			if cfg.Scope == config.ScopeFreeform {
-				fmt.Fprintf(cmd.ErrOrStderr(), "llm-mask exec: scope=freeform; allow-list=%d entries; deny-opt-outs=%d\n", len(cfg.Allow), len(cfg.DenyOptOut))
+				fmt.Fprintf(cmd.ErrOrStderr(), "opsmask exec: scope=freeform; allow-list=%d entries; deny-opt-outs=%d\n", len(cfg.Allow), len(cfg.DenyOptOut))
 			}
 			runCtx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()

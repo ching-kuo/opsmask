@@ -2,7 +2,7 @@
 
 ## Gitleaks
 
-Some built-in common secret/token detector rules in `llm-mask` are derived from
+Some built-in common secret/token detector rules in `opsmask` are derived from
 the Gitleaks default configuration.
 
 - Project: <https://github.com/gitleaks/gitleaks>

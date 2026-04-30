@@ -10,7 +10,7 @@ baseline and masking-gap fixes.
 - Gitleaks-derived rules are pinned and curated, not automatically synced.
   Future upstream changes will not apply until deliberately reviewed and
   ported.
-- Automatic download during `llm-mask init` is intentionally avoided to preserve
+- Automatic download during `opsmask init` is intentionally avoided to preserve
   the no-network/default-reproducible trust model. If online updates are added,
   they should be explicit, pinned, hash-recorded, and trust-gated.
 - Gitleaks rules are designed primarily for repository scanning. Some rules may

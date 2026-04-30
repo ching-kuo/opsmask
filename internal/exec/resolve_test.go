@@ -7,7 +7,7 @@ import (
 
 func TestResolveSentinels(t *testing.T) {
 	values := map[string][]byte{"k8spod:0123456789abcdef": []byte("api-7d4f-xyz")}
-	got, err := Resolve(context.Background(), []string{"kubectl", "describe", "pod", "⟪llm-mask:k8spod:0123456789abcdef⟫"}, func(typ, idx string) ([]byte, bool, error) {
+	got, err := Resolve(context.Background(), []string{"kubectl", "describe", "pod", "⟪opsmask:k8spod:0123456789abcdef⟫"}, func(typ, idx string) ([]byte, bool, error) {
 		v, ok := values[typ+":"+idx]
 		return v, ok, nil
 	})
@@ -20,18 +20,18 @@ func TestResolveSentinels(t *testing.T) {
 }
 
 func TestResolveIsOnePassAndEscapedFormsAreInert(t *testing.T) {
-	values := map[string][]byte{"host:0123456789abcdef": []byte("literal-⟪llm-mask:host:ffffffffffffffff⟫")}
-	got, err := Resolve(context.Background(), []string{"echo", "[LLM_MASK_ESCAPED_SENTINEL:x]", "[[llm-mask:host:0123456789abcdef]]"}, func(typ, idx string) ([]byte, bool, error) {
+	values := map[string][]byte{"host:0123456789abcdef": []byte("literal-⟪opsmask:host:ffffffffffffffff⟫")}
+	got, err := Resolve(context.Background(), []string{"echo", "[OPSMASK_ESCAPED_SENTINEL:x]", "[[opsmask:host:0123456789abcdef]]"}, func(typ, idx string) ([]byte, bool, error) {
 		v, ok := values[typ+":"+idx]
 		return v, ok, nil
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got[1] != "[LLM_MASK_ESCAPED_SENTINEL:x]" {
+	if got[1] != "[OPSMASK_ESCAPED_SENTINEL:x]" {
 		t.Fatalf("escaped sentinel changed: %q", got[1])
 	}
-	if got[2] != "literal-⟪llm-mask:host:ffffffffffffffff⟫" {
+	if got[2] != "literal-⟪opsmask:host:ffffffffffffffff⟫" {
 		t.Fatalf("replacement was rescanned: %q", got[2])
 	}
 }
@@ -42,7 +42,7 @@ func TestResolveASCIIAndUnicodeForms(t *testing.T) {
 		v, ok := values[typ+":"+idx]
 		return v, ok, nil
 	}
-	for _, form := range []string{"⟪llm-mask:k8spod:0123456789abcdef⟫", "[[llm-mask:k8spod:0123456789abcdef]]"} {
+	for _, form := range []string{"⟪opsmask:k8spod:0123456789abcdef⟫", "[[opsmask:k8spod:0123456789abcdef]]"} {
 		got, err := Resolve(context.Background(), []string{"kubectl", "describe", "pod", form}, lookup)
 		if err != nil {
 			t.Fatalf("form %q: %v", form, err)
@@ -63,7 +63,7 @@ func TestResolveNormalizesKubectlNamespaceFlagResourceReferences(t *testing.T) {
 		return v, ok, nil
 	}
 	got, err := Resolve(context.Background(), []string{
-		"kubectl", "describe", "-n", "[[llm-mask:k8snamespace:aaaaaaaaaaaaaaaa]]", "[[llm-mask:k8spod:bbbbbbbbbbbbbbbb]]",
+		"kubectl", "describe", "-n", "[[opsmask:k8snamespace:aaaaaaaaaaaaaaaa]]", "[[opsmask:k8spod:bbbbbbbbbbbbbbbb]]",
 	}, lookup)
 	if err != nil {
 		t.Fatal(err)
@@ -86,7 +86,7 @@ func TestResolveNormalizesKubectlNamespaceEqualsResourceReferences(t *testing.T)
 		return v, ok, nil
 	}
 	got, err := Resolve(context.Background(), []string{
-		"kubectl", "describe", "--namespace=[[llm-mask:k8snamespace:aaaaaaaaaaaaaaaa]]", "[[llm-mask:k8spod:bbbbbbbbbbbbbbbb]]",
+		"kubectl", "describe", "--namespace=[[opsmask:k8snamespace:aaaaaaaaaaaaaaaa]]", "[[opsmask:k8spod:bbbbbbbbbbbbbbbb]]",
 	}, lookup)
 	if err != nil {
 		t.Fatal(err)
@@ -97,7 +97,7 @@ func TestResolveNormalizesKubectlNamespaceEqualsResourceReferences(t *testing.T)
 }
 
 func TestResolveFailsClosed(t *testing.T) {
-	_, err := Resolve(context.Background(), []string{"echo", "⟪llm-mask:k8spod:ffffffffffffffff⟫"}, func(typ, idx string) ([]byte, bool, error) {
+	_, err := Resolve(context.Background(), []string{"echo", "⟪opsmask:k8spod:ffffffffffffffff⟫"}, func(typ, idx string) ([]byte, bool, error) {
 		return nil, false, nil
 	})
 	if err == nil {

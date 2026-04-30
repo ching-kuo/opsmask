@@ -4,8 +4,8 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/ching-kuo/llm-mask/internal/config"
-	"github.com/ching-kuo/llm-mask/internal/exec/denybase"
+	"github.com/ching-kuo/opsmask/internal/config"
+	"github.com/ching-kuo/opsmask/internal/exec/denybase"
 )
 
 func TestHardDenyBaseAlignsWithDenybase(t *testing.T) {

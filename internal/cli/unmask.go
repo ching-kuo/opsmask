@@ -6,15 +6,15 @@ import (
 	"io"
 	"os"
 
-	"github.com/ching-kuo/llm-mask/internal/detect"
-	"github.com/ching-kuo/llm-mask/internal/tty"
+	"github.com/ching-kuo/opsmask/internal/detect"
+	"github.com/ching-kuo/opsmask/internal/tty"
 	"github.com/spf13/cobra"
 )
 
 func newUnmask(opts *Options) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "unmask [file|-]",
-		Short: "Restore llm-mask tokens at a human terminal",
+		Short: "Restore opsmask tokens at a human terminal",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !tty.IsTerminal(int(os.Stdout.Fd())) {

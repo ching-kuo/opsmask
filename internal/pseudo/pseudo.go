@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ching-kuo/llm-mask/internal/store"
+	"github.com/ching-kuo/opsmask/internal/store"
 )
 
 type Allocator struct {

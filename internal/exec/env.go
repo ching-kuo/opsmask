@@ -4,7 +4,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/ching-kuo/llm-mask/internal/config"
+	"github.com/ching-kuo/opsmask/internal/config"
 )
 
 type EnvResult struct {

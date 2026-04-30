@@ -4,7 +4,7 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/ching-kuo/llm-mask/internal/policy"
+	"github.com/ching-kuo/opsmask/internal/policy"
 )
 
 func findSpec(t *testing.T, name string) Spec {

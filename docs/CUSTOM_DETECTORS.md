@@ -14,7 +14,7 @@ a stable sentinel, so repeated references remain correlatable, while the raw
 value stays local.
 
 ```yaml
-# .llm-mask/config.yaml
+# .opsmask/config.yaml
 literals: []
 regex_rules:
   - name: app-user-id
@@ -38,22 +38,22 @@ exec:
 After editing config, trust it:
 
 ```sh
-llm-mask config trust
+opsmask config trust
 ```
 
 Trust is bound to the config path and file hash. Any edit requires running
-`llm-mask config trust` again before project rules apply.
+`opsmask config trust` again before project rules apply.
 
 Example:
 
 ```sh
-printf 'user user_91237 placed order_X7Q9\n' | llm-mask mask
+printf 'user user_91237 placed order_X7Q9\n' | opsmask mask
 ```
 
 Expected shape:
 
 ```text
-user ⟪llm-mask:app_user:...⟫ placed ⟪llm-mask:app_order:...⟫
+user ⟪opsmask:app_user:...⟫ placed ⟪opsmask:app_order:...⟫
 ```
 
 ## Other common project shapes

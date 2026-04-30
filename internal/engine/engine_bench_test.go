@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ching-kuo/llm-mask/internal/detect"
-	"github.com/ching-kuo/llm-mask/internal/pseudo"
-	"github.com/ching-kuo/llm-mask/internal/store"
+	"github.com/ching-kuo/opsmask/internal/detect"
+	"github.com/ching-kuo/opsmask/internal/pseudo"
+	"github.com/ching-kuo/opsmask/internal/store"
 )
 
 func BenchmarkMixedSecretsCorpus(b *testing.B) {

@@ -1,4 +1,4 @@
-module github.com/ching-kuo/llm-mask
+module github.com/ching-kuo/opsmask
 
 go 1.26
 

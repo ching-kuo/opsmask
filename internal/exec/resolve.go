@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/ching-kuo/llm-mask/internal/detect"
+	"github.com/ching-kuo/opsmask/internal/detect"
 )
 
 type LookupFunc func(typ, index string) ([]byte, bool, error)

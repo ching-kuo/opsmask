@@ -8,8 +8,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/ching-kuo/llm-mask/internal/detect/rules"
-	"github.com/ching-kuo/llm-mask/internal/policy"
+	"github.com/ching-kuo/opsmask/internal/detect/rules"
+	"github.com/ching-kuo/opsmask/internal/policy"
 )
 
 type Rule struct {

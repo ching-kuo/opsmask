@@ -48,7 +48,7 @@ func ExitCode(err error) int {
 func NewRoot(version string) *cobra.Command {
 	opts := &Options{}
 	root := &cobra.Command{
-		Use:           "llm-mask",
+		Use:           "opsmask",
 		Short:         "Mask log text before sending it to an LLM",
 		Version:       version,
 		SilenceUsage:  true,

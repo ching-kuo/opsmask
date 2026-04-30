@@ -8,7 +8,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/ching-kuo/llm-mask/internal/config"
+	"github.com/ching-kuo/opsmask/internal/config"
 )
 
 const auditMaxLine = 4095
@@ -82,14 +82,14 @@ func openAuditLog() (*os.File, string, error) {
 }
 
 func auditDir() (string, error) {
-	if x := os.Getenv("LLM_MASK_AUDIT_DIR"); x != "" {
+	if x := os.Getenv("OPSMASK_AUDIT_DIR"); x != "" {
 		return x, nil
 	}
 	base, err := os.UserConfigDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(base, "llm-mask"), nil
+	return filepath.Join(base, "opsmask"), nil
 }
 
 func encodeRecord(rec Record) ([]byte, error) {

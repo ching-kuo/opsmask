@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ching-kuo/llm-mask/internal/detect"
-	"github.com/ching-kuo/llm-mask/internal/pseudo"
-	"github.com/ching-kuo/llm-mask/internal/store"
+	"github.com/ching-kuo/opsmask/internal/detect"
+	"github.com/ching-kuo/opsmask/internal/pseudo"
+	"github.com/ching-kuo/opsmask/internal/store"
 )
 
 func TestProcessMasksIdentifiersAndDestroysSecrets(t *testing.T) {
@@ -30,7 +30,7 @@ func TestProcessMasksIdentifiersAndDestroysSecrets(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := out.String()
-	if !strings.Contains(s, "[[llm-mask:ip4:") || !strings.Contains(s, "[[llm-mask:email:") || !strings.Contains(s, "[REDACTED_AWS_KEY]") {
+	if !strings.Contains(s, "[[opsmask:ip4:") || !strings.Contains(s, "[[opsmask:email:") || !strings.Contains(s, "[REDACTED_AWS_KEY]") {
 		t.Fatalf("unexpected output: %s", s)
 	}
 	if stats.Masked != 2 || stats.Destroyed != 1 {
@@ -55,7 +55,7 @@ func TestProcessMasksAcrossStreamingBoundary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "[[llm-mask:email:") {
+	if !strings.Contains(out.String(), "[[opsmask:email:") {
 		t.Fatalf("email spanning boundary was not masked")
 	}
 	if strings.Contains(out.String(), "alice@example.com") {
@@ -79,7 +79,7 @@ func TestTokenFormUsesFirst8KiB(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "⟪llm-mask:email:") {
+	if !strings.Contains(out.String(), "⟪opsmask:email:") {
 		t.Fatalf("expected unicode token based on first 8KiB, got %q", out.String()[len(out.String())-80:])
 	}
 }
@@ -114,7 +114,7 @@ func TestProcessMasksKnownGapFixture(t *testing.T) {
 			t.Fatalf("fixture leaked %q in:\n%s", leaked, s)
 		}
 	}
-	for _, want := range []string{"[REDACTED_JWT]", "[REDACTED_STRIPE_KEY]", "[[llm-mask:stripe_id:"} {
+	for _, want := range []string{"[REDACTED_JWT]", "[REDACTED_STRIPE_KEY]", "[[opsmask:stripe_id:"} {
 		if !strings.Contains(s, want) {
 			t.Fatalf("fixture output missing %q in:\n%s", want, s)
 		}

@@ -1,9 +1,9 @@
 version: 2
-project_name: llm-mask
+project_name: opsmask
 builds:
-  - id: llm-mask
-    main: ./cmd/llm-mask
-    binary: llm-mask
+  - id: opsmask
+    main: ./cmd/opsmask
+    binary: opsmask
     env: [CGO_ENABLED=0]
     goos: [darwin, linux, windows]
     goarch: [amd64, arm64]
@@ -12,7 +12,7 @@ archives:
     files:
       - README.md
       - LICENSE*
-      - skill/llm-mask/**
+      - skill/opsmask/**
 checksum:
   name_template: "checksums.txt"
 sboms:

@@ -18,7 +18,7 @@ func EnsurePrivateDir(dir string) error {
 		return fmt.Errorf("%s is not a directory", dir)
 	}
 	if info.Mode().Perm()&0o077 != 0 {
-		return fmt.Errorf("%s must not be group/world accessible; run llm-mask init in the intended project", dir)
+		return fmt.Errorf("%s must not be group/world accessible; run opsmask init in the intended project", dir)
 	}
 	if err := platformFileOwnerOK(dir, info); err != nil {
 		return err
@@ -38,7 +38,7 @@ func ResolveMapping(cwd, explicit string) (string, error) {
 		cwd, _ = os.Getwd()
 	}
 	for {
-		dir := filepath.Join(cwd, ".llm-mask")
+		dir := filepath.Join(cwd, ".opsmask")
 		if info, err := os.Stat(dir); err == nil && info.IsDir() {
 			if err := EnsurePrivateDir(dir); err != nil {
 				return "", err
@@ -55,7 +55,7 @@ func ResolveMapping(cwd, explicit string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	dir := filepath.Join(configDir, "llm-mask")
+	dir := filepath.Join(configDir, "opsmask")
 	if err := EnsurePrivateDir(dir); err != nil {
 		return "", err
 	}

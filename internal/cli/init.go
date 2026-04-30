@@ -9,7 +9,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const projectConfigBody = "# llm-mask project config (run `llm-mask config trust` after edits)\n" +
+const projectConfigBody = "# opsmask project config (run `opsmask config trust` after edits)\n" +
 	"# Example literal rule:\n" +
 	"#   - name: customer\n" +
 	"#     type: customer\n" +
@@ -20,7 +20,7 @@ const projectConfigBody = "# llm-mask project config (run `llm-mask config trust
 	"deny_list: []\n" +
 	"\n" +
 	"# Follow-up command execution is disabled by default. To enable it,\n" +
-	"# set enabled: true, then run `llm-mask config trust` again.\n" +
+	"# set enabled: true, then run `opsmask config trust` again.\n" +
 	"exec:\n" +
 	"  enabled: false\n" +
 	"  scope: read-only\n" +
@@ -30,7 +30,7 @@ const projectConfigBody = "# llm-mask project config (run `llm-mask config trust
 	"  env_deny: []\n"
 
 func initProjectFiles() ([]string, error) {
-	dir := ".llm-mask"
+	dir := ".opsmask"
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}
@@ -90,17 +90,17 @@ func hasActiveProjectConfig(body []byte) bool {
 
 func printInitSummary(cmd *cobra.Command, created []string) {
 	if len(created) == 0 {
-		fmt.Fprintln(cmd.ErrOrStderr(), ".llm-mask already initialized")
+		fmt.Fprintln(cmd.ErrOrStderr(), ".opsmask already initialized")
 	} else {
 		fmt.Fprintf(cmd.ErrOrStderr(), "created %s\n", created)
 	}
-	fmt.Fprintf(cmd.ErrOrStderr(), "active project mapping: %s\n", filepath.Join(".llm-mask", "mapping.sqlite"))
+	fmt.Fprintf(cmd.ErrOrStderr(), "active project mapping: %s\n", filepath.Join(".opsmask", "mapping.sqlite"))
 }
 
 func newInit() *cobra.Command {
 	return &cobra.Command{
 		Use:   "init",
-		Short: "Initialize .llm-mask in the current directory",
+		Short: "Initialize .opsmask in the current directory",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			created, err := initProjectFiles()
 			if err != nil {

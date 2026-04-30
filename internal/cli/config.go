@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/ching-kuo/llm-mask/internal/config"
+	"github.com/ching-kuo/opsmask/internal/config"
 	"github.com/spf13/cobra"
 )
 
@@ -17,7 +17,7 @@ func newConfig() *cobra.Command {
 		Use:   "config",
 		Short: "Manage trusted config",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			path := filepath.Join(".llm-mask", "config.yaml")
+			path := filepath.Join(".opsmask", "config.yaml")
 			if _, err := os.Stat(path); err != nil {
 				if !os.IsNotExist(err) {
 					return err
@@ -29,7 +29,7 @@ func newConfig() *cobra.Command {
 	}
 	cmd.AddCommand(&cobra.Command{
 		Use:   "init",
-		Short: "Initialize .llm-mask/config.yaml in the current directory",
+		Short: "Initialize .opsmask/config.yaml in the current directory",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			created, err := initProjectFiles()
 			if err != nil {
@@ -41,9 +41,9 @@ func newConfig() *cobra.Command {
 	})
 	cmd.AddCommand(&cobra.Command{
 		Use:   "trust",
-		Short: "Trust the current project .llm-mask/config.yaml",
+		Short: "Trust the current project .opsmask/config.yaml",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			path, err := filepath.Abs(filepath.Join(".llm-mask", "config.yaml"))
+			path, err := filepath.Abs(filepath.Join(".opsmask", "config.yaml"))
 			if err != nil {
 				return err
 			}
@@ -71,14 +71,14 @@ func newConfig() *cobra.Command {
 }
 
 func promptInitConfig(cmd *cobra.Command) error {
-	fmt.Fprint(cmd.ErrOrStderr(), "No .llm-mask/config.yaml found. Initialize now? [y/N]: ")
+	fmt.Fprint(cmd.ErrOrStderr(), "No .opsmask/config.yaml found. Initialize now? [y/N]: ")
 	answer, err := bufio.NewReader(cmd.InOrStdin()).ReadString('\n')
 	if err != nil && err != io.EOF {
 		return err
 	}
 	answer = strings.ToLower(strings.TrimSpace(answer))
 	if answer != "y" && answer != "yes" {
-		fmt.Fprintln(cmd.ErrOrStderr(), "not initialized; run `llm-mask config init` or `llm-mask init` when ready")
+		fmt.Fprintln(cmd.ErrOrStderr(), "not initialized; run `opsmask config init` or `opsmask init` when ready")
 		return nil
 	}
 	created, err := initProjectFiles()
@@ -86,7 +86,7 @@ func promptInitConfig(cmd *cobra.Command) error {
 		return err
 	}
 	printInitSummary(cmd, created)
-	fmt.Fprintln(cmd.ErrOrStderr(), "edit .llm-mask/config.yaml, then run `llm-mask config trust` to enable it")
+	fmt.Fprintln(cmd.ErrOrStderr(), "edit .opsmask/config.yaml, then run `opsmask config trust` to enable it")
 	return nil
 }
 
@@ -109,7 +109,7 @@ func printConfigStatus(cmd *cobra.Command, path string) error {
 	}
 	fmt.Fprintf(cmd.ErrOrStderr(), "%s is %s; rules: literals=%d regex_rules=%d deny_list=%d\n", abs, trust, lit, re, deny)
 	if !ok {
-		fmt.Fprintln(cmd.ErrOrStderr(), "run `llm-mask config trust` to enable this project config")
+		fmt.Fprintln(cmd.ErrOrStderr(), "run `opsmask config trust` to enable this project config")
 	}
 	return nil
 }

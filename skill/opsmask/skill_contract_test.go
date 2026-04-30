@@ -1,4 +1,4 @@
-package llm_mask_test
+package opsmask_test
 
 import (
 	"os"
@@ -13,10 +13,10 @@ func TestSkillContract(t *testing.T) {
 	}
 	s := string(b)
 	required := []string{
-		"name: llm-mask",
+		"name: opsmask",
 		"preserve sentinel tokens verbatim",
-		"Never invoke `llm-mask unmask`",
-		"tell the user to run `llm-mask unmask < report.md`",
+		"Never invoke `opsmask unmask`",
+		"tell the user to run `opsmask unmask < report.md`",
 	}
 	for _, q := range required {
 		if !strings.Contains(s, q) {
