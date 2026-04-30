@@ -99,8 +99,111 @@ The LLM works on the masked text and must echo sentinels verbatim. Then
 | `opsmask exec -- <cmd> [args...]` | Run a follow-up command with sentinels in argv; output is re-masked before it returns. |
 | `opsmask mapping list [--type T] [--limit N]` | List pseudonyms (no plaintext). TTY-only. |
 | `opsmask mapping prune --older-than <duration> [--type T]` | Delete old mapping rows. `--older-than` is required. |
+| `opsmask mcp serve` | Run the Model Context Protocol server on stdio for LLM clients. |
 
 Global flags: `--config <path>`, `--mapping <path>`, `--verbose`.
+
+## MCP server
+
+`opsmask mcp serve` exposes masking, detection, and follow-up `exec` to
+LLM clients (Claude Desktop, Claude Code, Cursor, Copilot) over the
+standard Model Context Protocol stdio transport. The server uses the
+official `modelcontextprotocol/go-sdk`.
+
+### Quickstart
+
+Find the absolute path to your binary (clients launch the server as a
+subprocess and `PATH` is unreliable in that context):
+
+```sh
+which opsmask
+# /usr/local/bin/opsmask  (or wherever you installed it)
+```
+
+Add the snippet to your client's MCP config. For Claude Desktop on macOS
+(`~/Library/Application Support/Claude/claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "opsmask": {
+      "command": "/usr/local/bin/opsmask",
+      "args": ["mcp", "serve"]
+    }
+  }
+}
+```
+
+Cursor (`~/.cursor/mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "opsmask": {
+      "command": "/usr/local/bin/opsmask",
+      "args": ["mcp", "serve"]
+    }
+  }
+}
+```
+
+Claude Code (`~/.config/claude-code/mcp.json` or per-project
+`.claude/mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "opsmask": {
+      "command": "/usr/local/bin/opsmask",
+      "args": ["mcp", "serve"]
+    }
+  }
+}
+```
+
+### Tools and resources
+
+| Tool | Purpose |
+| --- | --- |
+| `mask_text` | Mask sensitive values in text using project detectors. Persists pseudonyms. |
+| `detect_text` | Scan text for sensitive values without persisting. Returns counts by type. |
+| `exec` | Run a follow-up command. Honors project allow-list, deny-base, re-masks output. |
+| `mapping_stats` | Per-type counts of pseudonyms currently in the mapping store. |
+| `list_detectors` | List active detector rules (built-ins + project rules). |
+
+| Resource | URI |
+| --- | --- |
+| Mapping snapshot (token-only) | `opsmask://mapping/{type}?limit=N` |
+
+### What is *not* exposed and why
+
+`unmask`, `init`, and `config trust` are **CLI-only by design**. `unmask`
+returns plaintext; exposing it as an MCP tool would put plaintext into
+the agent's context window — voiding the project's headline guarantee.
+`init` and `config trust` mutate trust anchors that must originate from
+a human at a TTY.
+
+The mapping resource returns sentinel tokens and byte lengths only —
+**no plaintext, no HMAC bytes**. The resource handler is exercised by
+`internal/mcpsrv/resource_mapping_test.go` against multiple HMAC
+encodings (raw, hex, base64 std/url/raw) to enforce this contract.
+
+### Audit
+
+MCP tool calls write JSON-Lines records to two audit streams in the
+same directory as `exec.log` (configurable via `OPSMASK_AUDIT_DIR`,
+defaults to `~/.config/opsmask/`):
+
+- `exec.log` — `exec` tool records, identical schema to CLI exec, plus
+  a `"source": "mcp"` field. **Fail-closed**: subprocess execution
+  refuses if the audit log is unwritable.
+- `mcp_calls.jsonl` — lean records for non-exec tools (`mask_text`,
+  `detect_text`, `mapping_stats`, `list_detectors`, resource reads).
+  Contains call counts and sizes, never content. **Fail-open**: a
+  bulk-masking call is not blocked by an unwritable audit, but the
+  failure is logged to the server's stderr (visible to the launching
+  client). No MCP tool surface exposes audit-failure status — exposing
+  even a sticky boolean would create a denial-of-service oracle.
 
 ## Token forms
 
@@ -243,10 +346,14 @@ exec:
 `curl` and `wget` are not in any baseline; allow them explicitly when needed.
 
 `exec` writes JSON-lines audit records to `~/.config/opsmask/exec.log`
-(mode `0600`). Records include unresolved argv, scope, policy match, exit
-code, duration, and env-shaping counts. The audit log is preflighted before
-any child runs: if the file or directory is unwritable, `exec` refuses with
-exit 125.
+(mode `0600`). Each invocation writes two records: a `"starting"` record
+before the child process runs (with argv, scope, policy match, env-shaping
+counts) and a final record afterward (with `exit_code`, `duration_ms`,
+`error_class`). The pre-execution record is the load-bearing forensic
+anchor — if the audit log becomes unwritable between `Preflight` and
+the final write, the subprocess refuses to run. If a write fails *after*
+the subprocess has already executed (e.g. disk filled mid-Run), the
+`"starting"` record on disk preserves reconstruction.
 
 ### Child environment shaping
 

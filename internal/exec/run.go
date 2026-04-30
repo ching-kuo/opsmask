@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
 	osexec "os/exec"
 	"sync"
 	"syscall"
@@ -30,6 +31,12 @@ type RunResult struct {
 	ExitCode   int
 	Duration   time.Duration
 	ErrorClass string
+	// Masking stats aggregated across stdout and stderr after maskStream
+	// drains both pipes. CLI exec ignores these; the MCP exec tool surfaces
+	// them in its result so the agent can see how much was masked.
+	Masked    int
+	Destroyed int
+	ByType    map[string]int
 }
 
 func Run(ctx context.Context, argv []string, opts RunOptions) RunResult {
@@ -41,16 +48,31 @@ func Run(ctx context.Context, argv []string, opts RunOptions) RunResult {
 	cmd.Env = opts.Env
 	cmd.Stdin = opts.Stdin
 	setProcessGroup(cmd)
-	stdout, err := cmd.StdoutPipe()
+	// Manage pipes manually instead of StdoutPipe/StderrPipe. cmd.Wait closes
+	// any StdoutPipe/StderrPipe on completion, which can race with the
+	// reader goroutines that drain output for engine.Process. Manual pipes
+	// stay open until our readers see EOF (after the child closes its
+	// write ends on exit), then we close them ourselves.
+	stdoutR, stdoutW, err := os.Pipe()
 	if err != nil {
 		return RunResult{ExitCode: 125, Duration: time.Since(start), ErrorClass: "wrapper"}
 	}
-	stderr, err := cmd.StderrPipe()
+	stderrR, stderrW, err := os.Pipe()
 	if err != nil {
+		closeAll(stdoutR, stdoutW)
 		return RunResult{ExitCode: 125, Duration: time.Since(start), ErrorClass: "wrapper"}
 	}
+	cmd.Stdout = stdoutW
+	cmd.Stderr = stderrW
+	// CloseOnExecAll sets FD_CLOEXEC on every fd >= 3 the parent has open,
+	// including the pipe fds we just created. Safe because the child's
+	// stdout/stderr (fd 1/2) come from dup2 after fork — dup2 clears
+	// FD_CLOEXEC, so writes survive exec. The parent's higher-numbered
+	// pipe fds keeping FD_CLOEXEC means a future grandchild fork wouldn't
+	// inherit them.
 	CloseOnExecAll()
 	if err := cmd.Start(); err != nil {
+		closeAll(stdoutR, stdoutW, stderrR, stderrW)
 		code := 125
 		class := "wrapper"
 		if errors.Is(err, osexec.ErrNotFound) {
@@ -58,10 +80,24 @@ func Run(ctx context.Context, argv []string, opts RunOptions) RunResult {
 		}
 		return RunResult{ExitCode: code, Duration: time.Since(start), ErrorClass: class}
 	}
+	// Close the parent's copies of the write ends now that the child has
+	// inherited them. Without this, the readers never see EOF because the
+	// kernel keeps the pipe open as long as any process holds the write end.
+	_ = stdoutW.Close()
+	_ = stderrW.Close()
 	var streamWg sync.WaitGroup
 	streamWg.Add(2)
-	go func() { defer streamWg.Done(); maskStream(ctx, stdout, opts.Stdout, opts) }()
-	go func() { defer streamWg.Done(); maskStream(ctx, stderr, opts.Stderr, opts) }()
+	var stdoutStats, stderrStats engine.Stats
+	go func() {
+		defer streamWg.Done()
+		stdoutStats = maskStream(ctx, stdoutR, opts.Stdout, opts)
+		_ = stdoutR.Close()
+	}()
+	go func() {
+		defer streamWg.Done()
+		stderrStats = maskStream(ctx, stderrR, opts.Stderr, opts)
+		_ = stderrR.Close()
+	}()
 
 	waitCh := make(chan error, 1)
 	go func() { waitCh <- cmd.Wait() }()
@@ -69,8 +105,9 @@ func Run(ctx context.Context, argv []string, opts RunOptions) RunResult {
 	waitErr, timedOut := waitForChild(ctx, cmd, waitCh, opts.Timeout, opts.KillGrace)
 	streamWg.Wait()
 
+	merged := mergeStats(stdoutStats, stderrStats)
 	if timedOut {
-		return RunResult{ExitCode: 124, Duration: time.Since(start), ErrorClass: "timeout"}
+		return RunResult{ExitCode: 124, Duration: time.Since(start), ErrorClass: "timeout", Masked: merged.Masked, Destroyed: merged.Destroyed, ByType: merged.ByType}
 	}
 	code := 0
 	class := ""
@@ -86,7 +123,21 @@ func Run(ctx context.Context, argv []string, opts RunOptions) RunResult {
 			class = "wrapper"
 		}
 	}
-	return RunResult{ExitCode: code, Duration: time.Since(start), ErrorClass: class}
+	return RunResult{ExitCode: code, Duration: time.Since(start), ErrorClass: class, Masked: merged.Masked, Destroyed: merged.Destroyed, ByType: merged.ByType}
+}
+
+func mergeStats(a, b engine.Stats) engine.Stats {
+	if len(a.ByType) == 0 && len(b.ByType) == 0 {
+		return engine.Stats{Masked: a.Masked + b.Masked, Destroyed: a.Destroyed + b.Destroyed}
+	}
+	out := engine.Stats{Masked: a.Masked + b.Masked, Destroyed: a.Destroyed + b.Destroyed, ByType: map[string]int{}}
+	for k, v := range a.ByType {
+		out.ByType[k] += v
+	}
+	for k, v := range b.ByType {
+		out.ByType[k] += v
+	}
+	return out
 }
 
 func waitForChild(ctx context.Context, cmd *osexec.Cmd, waitCh chan error, timeout, grace time.Duration) (error, bool) {
@@ -102,6 +153,12 @@ func waitForChild(ctx context.Context, cmd *osexec.Cmd, waitCh chan error, timeo
 	case <-timerC:
 	case <-ctx.Done():
 	}
+	// Defensive: every caller is post-Start so cmd.Process is non-nil, but
+	// guarding here keeps a future contract change from turning a nil deref
+	// into a process-group SIGKILL on pid -1.
+	if cmd.Process == nil {
+		return <-waitCh, false
+	}
 	signalGroup(cmd.Process.Pid, syscall.SIGTERM)
 	graceTimer := time.NewTimer(grace)
 	defer graceTimer.Stop()
@@ -114,16 +171,23 @@ func waitForChild(ctx context.Context, cmd *osexec.Cmd, waitCh chan error, timeo
 	}
 }
 
+func closeAll(closers ...io.Closer) {
+	for _, c := range closers {
+		_ = c.Close()
+	}
+}
+
 // Allocator is shared across stdout and stderr goroutines; pseudo.Allocator's
 // mutex guarantees safe concurrent CommitPlans.
-func maskStream(ctx context.Context, src io.Reader, dst io.Writer, opts RunOptions) {
+func maskStream(ctx context.Context, src io.Reader, dst io.Writer, opts RunOptions) engine.Stats {
 	if dst == nil {
 		_, _ = io.Copy(io.Discard, src)
-		return
+		return engine.Stats{}
 	}
 	if len(opts.Rules) == 0 || opts.Alloc == nil {
 		_, _ = io.Copy(dst, src)
-		return
+		return engine.Stats{}
 	}
-	_, _ = engine.Process(ctx, src, dst, opts.Rules, opts.Alloc, engine.Options{MaxLine: maskio.DefaultMaxLine})
+	stats, _ := engine.Process(ctx, src, dst, opts.Rules, opts.Alloc, engine.Options{MaxLine: maskio.DefaultMaxLine})
+	return stats
 }

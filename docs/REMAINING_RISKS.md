@@ -1,6 +1,39 @@
 # Remaining risks
 
-Last updated: 2026-04-29
+Last updated: 2026-04-30
+
+## MCP attack surface
+
+- **Tool poisoning.** A malicious agent can craft `exec` or `mask_text`
+  inputs designed to coerce a confused-deputy decision. The existing
+  allow-list, deny-base, and scope-open refusal close the most direct
+  paths; the residual risk is pattern complexity (a benign-looking
+  argv that exploits a path bug in a downstream tool). Audit log
+  preserves the full unresolved argv for forensics.
+- **Token-result poisoning.** Subprocess output that contains
+  adversarial sentinel-shaped strings is neutralized by the engine's
+  inert-escape pass before re-masking. Plaintext that survives masking
+  still flows back; this is the same surface as CLI exec, not an
+  MCP-specific risk.
+- **Mixed-process SQLite contention.** A long-lived MCP server can
+  share `mapping.sqlite` with concurrent CLI invocations. The mixed
+  long-lived + short-lived test in
+  `internal/store/concurrency_multiprocess_mixed_test.go` covers the
+  representative case but cannot enumerate every scheduler interleaving;
+  production users may surface edge cases the test does not exercise.
+- **Audit-write failure (non-exec).** `mcp_calls.jsonl` writes are
+  fail-open: a non-exec MCP tool call (`mask_text`, `detect_text`,
+  `mapping_stats`, `list_detectors`, mapping resource read) succeeds
+  even when the audit append fails. The failure is logged to the
+  server's stderr only; no MCP tool surface exposes audit-failure
+  status. Operators who require fail-closed semantics for bulk masking
+  should monitor the launching client's stderr capture (systemd
+  journal, etc.).
+- **MCP supply chain.** Single-binary distribution via signed
+  GoReleaser artifacts mitigates typo-squat risk; OpsMask is not
+  published to npm or pip.
+
+## Detector sourcing and updates
 
 This file captures known follow-up risks after the Gitleaks-derived detector
 baseline and masking-gap fixes.
