@@ -1,6 +1,39 @@
 # Remaining risks
 
-Last updated: 2026-04-30
+Last updated: 2026-05-05
+
+## Claude Code Bash hook
+
+- **Host bypass mode.** `opsmask install claude-code` enables a second
+  operating mode for one git project: Bash commands are signed and routed
+  through `claude-code-exec`, which intentionally bypasses the regular
+  `opsmask exec` trust / `exec.enabled` / policy gates. The HMAC prevents
+  accidental direct invocation and cross-project replay, but same-UID malware
+  that can read `~/.config/opsmask/hook_secret` can mint signatures.
+- **Team-shared denial of service.** A committed `.claude/settings.json` hook
+  fails closed for teammates or CI runners that do not have OpsMask installed.
+  The installer warns before `--team-shared` writes, but repository owners
+  still need rollout discipline.
+- **Bash-only coverage.** The v0 hook does not mask `Read`, `Grep`, MCP tool
+  outputs, browser fetch output, or historical transcript content. It reduces
+  the most common shell-output leak path without claiming whole-agent egress
+  control.
+- **Skip-list pass-throughs are silent by design.** Trivial commands such as
+  `ls`, `pwd`, and narrowly-shaped `git status` run unwrapped and are recorded
+  in `pass_through.log`, not `exec.log`. A future high-volume loop can grow
+  that audit file; rotation and sampling are not implemented yet.
+- **Shell-tokenization edges.** The skip-list matcher is a conservative
+  under-approximation, not a full POSIX shell parser. Ambiguous forms wrap,
+  but future shell syntax may expose cases that are noisier than expected.
+- **Variable expansion in skip-listed commands.** Bare `$VAR` expansion is not
+  treated like command substitution for skip-list purposes. Commands with
+  pipes, redirections, `;`, `&&`, backticks, or `$(` wrap.
+- **Multi-hook chain semantics.** Claude Code runs matching hooks according to
+  host settings. If another hook rewrites or blocks the same Bash call, the
+  final behavior depends on Claude Code's hook merge/execution semantics.
+- **Hook shim integrity.** The per-project `.claude/opsmask-hook.sh` has the
+  same project-write trust boundary as `.opsmask/config.yaml`. v0 does not bind
+  the shim or Claude settings file into OpsMask's `config trust` hash.
 
 ## MCP attack surface
 
@@ -60,6 +93,14 @@ baseline and masking-gap fixes.
   secrets.
 - JWT detection is structural, not cryptographic. It validates JWT-like header
   and payload shape but does not verify signatures or token expiry.
+- **Residual ccTLD masking on dotted-lowercase identifiers.** The hostname
+  detector now trusts the Public Suffix List. The fixed compatibility set
+  (`.go`, `.py`, `.rs`, `.sh`, `.md`) is explicitly rejected and is not
+  affected, but other PSL-recognized ccTLDs (`.do`, `.in`, `.is`, `.it`,
+  `.me`, etc.) can mask multi-label code/log identifiers ending in those
+  labels. Operators can add project-defined `regex_rules` for affected local
+  path shapes; PasswordURL and Email rules already context-anchor common real
+  network identifiers.
 
 ## Coverage gaps by design
 

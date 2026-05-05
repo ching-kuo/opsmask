@@ -3,17 +3,26 @@ package mcpsrv_test
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/ching-kuo/opsmask/internal/config"
 	"github.com/ching-kuo/opsmask/internal/mcpsrv"
+	mcpruntime "github.com/ching-kuo/opsmask/internal/runtime"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func startServer(t *testing.T, audit mcpsrv.AuditWriter, caps mcpsrv.Caps) (*mcp.ClientSession, func()) {
 	t.Helper()
 	rt := newTestRuntime(t)
+	return startServerWithRuntime(t, rt, audit, caps)
+}
+
+func startServerWithRuntime(t *testing.T, rt *mcpruntime.Env, audit mcpsrv.AuditWriter, caps mcpsrv.Caps) (*mcp.ClientSession, func()) {
+	t.Helper()
 	srv := mcpsrv.NewServerWithCaps(rt, audit, caps)
 	clientT, serverT := mcp.NewInMemoryTransports()
 
@@ -77,13 +86,42 @@ func TestMaskTextHappyPath(t *testing.T) {
 	}
 }
 
+func TestMaskTextUsesTrustedHostnameInternalTLDs(t *testing.T) {
+	rt := newRuntimeWithTrustedProjectConfig(t, "detectors:\n  hostname:\n    internal_tlds: [acme]\n", "")
+	sess, cleanup := startServerWithRuntime(t, rt, nil, mcpsrv.DefaultCaps())
+	defer cleanup()
+
+	out := callTool[mcpsrv.MaskTextOutput](t, sess, "mask_text", map[string]any{
+		"text":         "db-1.prod.acme",
+		"ascii_tokens": true,
+	})
+	if out.ByType["hostname"] != 1 || strings.Contains(out.Text, "db-1.prod.acme") {
+		t.Fatalf("out = %+v", out)
+	}
+}
+
+func TestMaskTextIgnoresConfigOnlyHostnameInternalTLDs(t *testing.T) {
+	configPath := writePrivateConfigFile(t, "detectors:\n  hostname:\n    internal_tlds: [acme]\n")
+	rt := newRuntimeWithTrustedProjectConfig(t, "", configPath)
+	sess, cleanup := startServerWithRuntime(t, rt, nil, mcpsrv.DefaultCaps())
+	defer cleanup()
+
+	out := callTool[mcpsrv.MaskTextOutput](t, sess, "mask_text", map[string]any{
+		"text":         "db-1.prod.acme",
+		"ascii_tokens": true,
+	})
+	if out.ByType["hostname"] != 0 || !strings.Contains(out.Text, "db-1.prod.acme") {
+		t.Fatalf("out = %+v", out)
+	}
+}
+
 func TestMaskTextInputTooLarge(t *testing.T) {
 	caps := mcpsrv.Caps{MaxTextBytes: 64, MaxExecOutputBytes: 1 << 20}
 	sess, cleanup := startServer(t, nil, caps)
 	defer cleanup()
 
 	res, err := sess.CallTool(context.Background(), &mcp.CallToolParams{
-		Name: "mask_text",
+		Name:      "mask_text",
 		Arguments: map[string]any{"text": strings.Repeat("a", 200)},
 	})
 	if err != nil {
@@ -163,4 +201,53 @@ func TestSchemaBudgetIsBounded(t *testing.T) {
 	if len(body) > 4096 {
 		t.Fatalf("tool list schema = %d bytes, want < 4096", len(body))
 	}
+}
+
+func newRuntimeWithTrustedProjectConfig(t *testing.T, body string, configPath string) *mcpruntime.Env {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+	projectRoot := t.TempDir()
+	if body != "" {
+		opsmaskDir := filepath.Join(projectRoot, ".opsmask")
+		if err := os.Mkdir(opsmaskDir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		cfg := filepath.Join(opsmaskDir, "config.yaml")
+		if err := os.WriteFile(cfg, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := config.Trust(cfg); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Chdir(projectRoot)
+	mappingDir := t.TempDir()
+	if err := os.Chmod(mappingDir, 0o700); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	env, err := mcpruntime.New(mcpruntime.Options{
+		Mapping: filepath.Join(mappingDir, "mapping.sqlite"),
+		Config:  configPath,
+	})
+	if err != nil {
+		t.Fatalf("runtime.New: %v", err)
+	}
+	t.Cleanup(func() { _ = env.Close() })
+	return env
+}
+
+func writePrivateConfigFile(t *testing.T, body string) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cfg := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(cfg, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return cfg
 }

@@ -4,6 +4,18 @@
 
 ### Added
 
+- **`opsmask install claude-code` / `opsmask uninstall claude-code`** for a
+  project-scoped Claude Code Bash `PreToolUse` hook. Install rolls back the
+  shim and settings entry if registry write fails; uninstall propagates
+  settings-write errors instead of silently leaving a dangling hook entry.
+- **HMAC-gated `claude-code-exec` bypass path** (hidden command) that reuses
+  sentinel resolution, environment shaping, process-group execution, masking,
+  and audit logging with `source: "hook"`.
+- **`detectors.hostname.internal_tlds`** trusted-project config field that
+  extends the default RFC-reserved internal-TLD set (`local`, `internal`,
+  `lan`, `home`, `localhost`, `arpa`, `corp`, `intranet`, `test`) with
+  organization-specific suffixes (e.g. `acme`). Additive only; honored only
+  from a trusted project `.opsmask/config.yaml`.
 - **MCP server (`opsmask mcp serve`).** Stdio Model Context Protocol server
   exposing five tools (`mask_text`, `detect_text`, `exec`, `mapping_stats`,
   `list_detectors`) and one resource template (`opsmask://mapping/{type}`)
@@ -77,6 +89,22 @@
 
 ### Changed
 
+- **Hostname detector switched to the Public Suffix List.** Replaced the
+  curated `nonFQDNTLDs` denylist + `validHostname` Check with a PSL-backed
+  Check that accepts ICANN-registered suffixes (`com`, `co.uk`), private PSL
+  suffixes (`s3.amazonaws.com`, `appspot.com`), and a fixed default
+  internal-TLD set; project config can extend internal suffixes. The regex
+  is also tightened to lowercase + 3+ labels with an alpha-only TLD of
+  2-24 chars, eliminating most source-code dot-notation false positives at
+  the regex layer. **Rejected vs accepted ccTLD residue:** `.go`, `.py`,
+  `.rs`, `.sh`, `.md` are explicitly rejected as code/log compatibility
+  exceptions. Other ccTLDs PSL recognizes (`.do`, `.in`, `.is`, `.it`,
+  `.me`, etc.) may now mask in dotted lowercase identifiers — the workaround
+  for high-volume cases is a project-defined `regex_rules` entry.
+- **Hook rewrite envelope** nests `updatedInput` under `hookSpecificOutput`
+  with `permissionDecision: "allow"` per the current Claude Code PreToolUse
+  contract, and preserves all original `tool_input` fields alongside the
+  rewritten `command`.
 - **Race fix in `internal/exec.Run`.** Replaced `cmd.StdoutPipe`/
   `cmd.StderrPipe` with manually-managed `os.Pipe` instances. The Go
   standard library's `cmd.Wait` closes pipes returned by `StdoutPipe`/
@@ -90,6 +118,25 @@
 - **Shared exec orchestration** lives in `internal/exec.Orchestrate`.
   CLI `exec` and MCP `exec` go through the same code path; the MCP
   caller opts into the scope-open refusal via `RefuseScopeOpen: true`.
+
+### Fixed
+
+- **Kubernetes resource detectors** (`k8snode`, `k8spod`, `k8snamespace`, ...)
+  rebuilt with three precision fixes from integration testing:
+  - Lowercase resource-name body (the noun verb stays case-insensitive).
+    Closes the false positive on column headers like `NODE   NOMINATED`
+    where `NOMINATED` was treated as a node name.
+  - Prefix anchor excludes hyphen suffixes: a resource named `nginx-ingress`
+    followed by `nginx` no longer partial-matches at the embedded `ingress`.
+  - Resource name captured as SubMatch 1 so the noun and surrounding
+    separator/quote are preserved in masked output (`configmap "<name>"
+    not found` keeps the leading `configmap "`).
+- **`validK8sName` Check rejects duration-shaped candidates** (`10h`, `5d`,
+  `1d2h`) so kubectl AGE column values are no longer masked as node names.
+  Pure-digit names are also rejected.
+- **`internal/cchook` handler tests** are now robust against an inherited
+  `OPSMASK_EXEC_CHILD=1` (which can leak in when the suite is launched
+  through the OpsMask Claude Code hook itself).
 
 ## v0.1.0
 

@@ -97,11 +97,35 @@ The LLM works on the masked text and must echo sentinels verbatim. Then
 | `opsmask mask [file\|-]` | Mask stdin or a file. Flags: `--summary`, `--ascii-tokens`, `--max-line` (default `16MiB`). |
 | `opsmask unmask [file\|-]` | Restore tokens. TTY-only. |
 | `opsmask exec -- <cmd> [args...]` | Run a follow-up command with sentinels in argv; output is re-masked before it returns. |
+| `opsmask install claude-code [--team-shared]` | Install the Claude Code Bash hook for the current git project. |
+| `opsmask uninstall claude-code` | Remove the Claude Code hook from the current git project. |
 | `opsmask mapping list [--type T] [--limit N]` | List pseudonyms (no plaintext). TTY-only. |
 | `opsmask mapping prune --older-than <duration> [--type T]` | Delete old mapping rows. `--older-than` is required. |
 | `opsmask mcp serve` | Run the Model Context Protocol server on stdio for LLM clients. |
 
 Global flags: `--config <path>`, `--mapping <path>`, `--verbose`.
+
+## Claude Code Bash hook
+
+`opsmask install claude-code` opts the current git project into a Claude Code
+`PreToolUse` hook for `Bash` calls. Non-trivial Bash commands are rewritten
+through a hidden, signed `opsmask claude-code-exec` entry point so stdout and
+stderr are masked before they can enter the agent context. The default install
+writes `.claude/settings.local.json` and adds it to `.gitignore`; pass
+`--team-shared` to write `.claude/settings.json` after accepting the teammate
+fail-closed warning.
+
+This is a deliberate second operating mode:
+
+- `opsmask exec`, `mask`, `unmask`, and MCP remain policy-gated by project
+  trust and `exec.enabled`.
+- The Claude Code hook bypasses those policy gates only for a project that was
+  explicitly registered by `opsmask install claude-code`. The bypass is gated
+  by a per-user hook secret and git-toplevel-bound HMAC signature, and writes
+  hook records to `exec.log` / `pass_through.log`.
+
+The v0 hook covers Claude Code `Bash` output only. `Read`, `Grep`, MCP tool
+outputs, and transcript sweeps are follow-up surfaces.
 
 ## MCP server
 
@@ -240,7 +264,7 @@ Two policies apply:
 | `uuid` | Pseudonymize | RFC 4122 v1–v5 with hyphens. |
 | `hex_id` | Pseudonymize | Plain hex run of 32–128 chars (MD5/SHA/long IDs). |
 | `email` | Pseudonymize | Standard `local@domain.tld` shape. |
-| `hostname` | Pseudonymize | RFC-1123-ish hostnames/FQDNs (≥2 labels, alphabetic TLD). |
+| `hostname` | Pseudonymize | RFC-1123-ish hostnames/FQDNs (≥3 labels, alphabetic TLD) whose suffix is recognized by the Public Suffix List or configured as internal. |
 | `k8snamespace`, `k8spod`, `k8snode`, … | Pseudonymize | Kubernetes resource references with nearby resource nouns. |
 | `jwt` | Destroy | JWT-shaped strings with valid header (`alg`/`typ`) and a common payload claim. |
 | `pem_private_key` | Destroy | `-----BEGIN ... PRIVATE KEY-----` blocks. |
@@ -263,9 +287,12 @@ Two policies apply:
 | `linear_token` | Destroy | Linear API keys (`lin_api_`). |
 | `postman_key` | Destroy | Postman access keys (`PMAK-`). |
 
-Hostname/FQDN and Kubernetes-resource detectors are precision-biased. For
-project-specific shapes (`user_…`, `order_…`, `tenant_…`, etc.), add trusted
-project rules — see [docs/CUSTOM_DETECTORS.md](docs/CUSTOM_DETECTORS.md).
+Hostname/FQDN detection uses the Public Suffix List for registered ICANN and
+private suffixes, plus a small default internal-TLD set (`local`, `internal`,
+`lan`, `home`, `localhost`, `arpa`, `corp`, `intranet`, `test`).
+Kubernetes-resource detectors are also precision-biased. For project-specific
+shapes (`user_…`, `order_…`, `tenant_…`, etc.), add trusted project rules —
+see [docs/CUSTOM_DETECTORS.md](docs/CUSTOM_DETECTORS.md).
 
 ## Configuration
 
@@ -299,10 +326,18 @@ exec:
   allow: []
   env_allow: []
   env_deny: []
+detectors:
+  hostname:
+    internal_tlds: [acme]
 ```
 
 The `deny_list` is an **audit canary**, not an enforcement boundary — a hit
 after masking signals the rule set missed something it should have destroyed.
+
+`detectors.hostname.internal_tlds` extends hostname masking for trusted
+self-hosted suffixes such as `db-1.prod.acme`. It is additive only and is
+honored only from a trusted project `.opsmask/config.yaml`; user-wide config
+and `--config` overrides cannot widen hostname masking.
 
 ## Follow-up commands with `exec`
 

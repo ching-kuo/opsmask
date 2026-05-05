@@ -5,12 +5,14 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"math"
+	"net/netip"
 	"regexp"
 	"sort"
 	"strings"
 
 	"github.com/ching-kuo/opsmask/internal/detect/rules"
 	"github.com/ching-kuo/opsmask/internal/policy"
+	"golang.org/x/net/publicsuffix"
 )
 
 type Rule struct {
@@ -48,6 +50,12 @@ func BuiltinRules() ([]Rule, error) {
 		r := Rule{Name: s.Name, Type: s.Type, Policy: s.Policy, Regex: re, Keywords: keywords, MaxMatchSpan: s.MaxMatchSpan, SubMatch: s.SubMatch, MinEntropy: s.MinEntropy}
 		if s.Type == "jwt" {
 			r.Check = validJWT
+		}
+		if strings.HasPrefix(s.Type, "k8s") {
+			r.Check = validK8sName
+		}
+		if s.Type == "hostname" {
+			r.Check = HostnameCheckFor(nil)
 		}
 		out = append(out, r)
 	}
@@ -171,6 +179,104 @@ func nonOverlapping(ms []Match) []Match {
 		last = m.End
 	}
 	return out
+}
+
+// durationTokenRE matches kubectl's HumanDuration output shapes — single or
+// composed pairs of `<digits>(.<digits>)?<unit-letters>`. Examples seen in
+// `kubectl get nodes -o wide` AGE columns: `10h`, `5d`, `30m`, `2y190d`,
+// `1d2h`, `12h30m`. The `.` in `1.5s` is not a name-class character, so the
+// regex truncates the candidate to `1` before this check sees it; the
+// letter-required half of `validK8sName` catches that case.
+var durationTokenRE = regexp.MustCompile(`^\d+(?:\.\d+)?[a-z]+(?:\d+(?:\.\d+)?[a-z]+)*$`)
+
+// validK8sName rejects k8s resource-name candidates that are either:
+//   - pure numeric / contain no lowercase letter (e.g. `1`, `123`) — the
+//     engine truncates `1.5s` to `1` before reaching here, and pure-digit
+//     names are vanishingly rare in real clusters.
+//   - shaped like a kubectl duration (`10h`, `5d`, `1d2h`) — overwhelmingly
+//     the AGE column adjacent to a literal `node` in the ROLES column,
+//     not a node name.
+//
+// Wired on every k8s* type via BuiltinRules.
+func validK8sName(b []byte) bool {
+	hasLetter := false
+	for _, c := range b {
+		if c >= 'a' && c <= 'z' {
+			hasLetter = true
+			break
+		}
+	}
+	if !hasLetter {
+		return false
+	}
+	return !durationTokenRE.Match(b)
+}
+
+type TLDStatus int
+
+const (
+	TLDFree TLDStatus = iota
+	TLDDefaultInternal
+	TLDCollision
+)
+
+var defaultInternalTLDs = map[string]bool{
+	"local": true, "internal": true, "lan": true, "home": true,
+	"localhost": true, "arpa": true, "corp": true, "intranet": true,
+	"test": true,
+}
+
+// codeLogCcTLDCollisions is a closed compatibility exception for real ccTLDs
+// that overwhelmingly appear as source/log path endings in this tool's input
+// corpus: Go source, Python modules, Rust modules, shell scripts, and Markdown
+// notes. Additions require a failing integration fixture, not prose evidence.
+var codeLogCcTLDCollisions = map[string]bool{
+	"go": true,
+	"py": true,
+	"rs": true,
+	"sh": true,
+	"md": true,
+}
+
+func ReservedTLDStatus(label string) (TLDStatus, string) {
+	if defaultInternalTLDs[label] {
+		return TLDDefaultInternal, "RFC-reserved internal TLD"
+	}
+	if codeLogCcTLDCollisions[label] {
+		return TLDCollision, "compatibility-exception ccTLD: " + label
+	}
+	return TLDFree, ""
+}
+
+// HostnameCheckFor returns a Check predicate for the Hostname rule. It is
+// designed for candidates already filtered by the Hostname regex: lowercase
+// RFC-1123-ish labels, 3+ labels, alphabetic final label, and word boundaries.
+// Direct callers outside the rule pipeline should enforce that same shape.
+func HostnameCheckFor(extra []string) func([]byte) bool {
+	allowedInternal := make(map[string]bool, len(defaultInternalTLDs)+len(extra))
+	for label := range defaultInternalTLDs {
+		allowedInternal[label] = true
+	}
+	for _, label := range extra {
+		allowedInternal[label] = true
+	}
+	return func(b []byte) bool {
+		if len(b) == 0 || bytes.IndexByte(b, '.') < 0 || b[len(b)-1] == '.' {
+			return false
+		}
+		s := string(b)
+		if _, err := netip.ParseAddr(s); err == nil {
+			return false
+		}
+		suffix, icann := publicsuffix.PublicSuffix(s)
+		if icann || strings.Contains(suffix, ".") {
+			if codeLogCcTLDCollisions[suffix] && suffix == s[strings.LastIndexByte(s, '.')+1:] {
+				return false
+			}
+			return true
+		}
+		return allowedInternal[suffix]
+	}
 }
 
 // validJWT checks that the candidate has a JWT-like JSON header plus a JSON

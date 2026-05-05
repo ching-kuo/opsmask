@@ -112,6 +112,146 @@ func TestUserWideExecEnableIsIgnored(t *testing.T) {
 	}
 }
 
+func TestTrustedProjectDetectorsLoad(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	projectRoot := t.TempDir()
+	opsmaskDir := filepath.Join(projectRoot, ".opsmask")
+	if err := os.Mkdir(opsmaskDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cfg := filepath.Join(opsmaskDir, "config.yaml")
+	body := "detectors:\n  hostname:\n    internal_tlds: [acme, mycorp]\n"
+	if err := os.WriteFile(cfg, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := Trust(cfg); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := Load(projectRoot, nil, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := loaded.ProjectDetectors.Hostname.InternalTLDs
+	if strings.Join(got, ",") != "acme,mycorp" {
+		t.Fatalf("internal_tlds = %#v", got)
+	}
+}
+
+func TestUserWideDetectorsAreIgnored(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	cfg, err := userConfigPath("config.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	userDir := filepath.Dir(cfg)
+	if err := os.MkdirAll(userDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for p := filepath.Dir(userDir); p != home && p != filepath.Dir(p); p = filepath.Dir(p) {
+		_ = os.Chmod(p, 0o700)
+	}
+	body := "detectors:\n  hostname:\n    internal_tlds: [acme]\n"
+	if err := os.WriteFile(cfg, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var warnings []string
+	loaded, err := Load(t.TempDir(), func(s string) { warnings = append(warnings, s) }, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(loaded.ProjectDetectors.Hostname.InternalTLDs) != 0 {
+		t.Fatalf("user-wide detectors leaked into project config: %+v", loaded.ProjectDetectors)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "user-wide detectors block") {
+		t.Fatalf("warnings = %#v", warnings)
+	}
+}
+
+func TestLoadFileKeepsDetectorConfigForRuntimeGate(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cfg := filepath.Join(dir, "config.yaml")
+	body := "detectors:\n  hostname:\n    internal_tlds: [acme]\n"
+	if err := os.WriteFile(cfg, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadFile(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(loaded.ProjectDetectors.Hostname.InternalTLDs, ",") != "acme" {
+		t.Fatalf("internal_tlds = %#v", loaded.ProjectDetectors.Hostname.InternalTLDs)
+	}
+}
+
+func TestUntrustedProjectDetectorsAreIgnored(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	projectRoot := t.TempDir()
+	opsmaskDir := filepath.Join(projectRoot, ".opsmask")
+	if err := os.Mkdir(opsmaskDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cfg := filepath.Join(opsmaskDir, "config.yaml")
+	body := "detectors:\n  hostname:\n    internal_tlds: [acme]\n"
+	if err := os.WriteFile(cfg, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := Load(projectRoot, nil, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !loaded.Untrusted {
+		t.Fatal("expected untrusted config")
+	}
+	if len(loaded.ProjectDetectors.Hostname.InternalTLDs) != 0 {
+		t.Fatalf("untrusted detectors loaded: %+v", loaded.ProjectDetectors)
+	}
+}
+
+func TestDetectorInternalTLDValidation(t *testing.T) {
+	for name, body := range map[string]string{
+		"uppercase": "detectors:\n  hostname:\n    internal_tlds: [Foo]\n",
+		"dot":       "detectors:\n  hostname:\n    internal_tlds: [a.b]\n",
+		"empty":     "detectors:\n  hostname:\n    internal_tlds: ['']\n",
+		"duplicate": "detectors:\n  hostname:\n    internal_tlds: [acme, acme]\n",
+		"default":   "detectors:\n  hostname:\n    internal_tlds: [local]\n",
+		"collision": "detectors:\n  hostname:\n    internal_tlds: [py]\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.Chmod(dir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			cfg := filepath.Join(dir, "config.yaml")
+			if err := os.WriteFile(cfg, []byte(body), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := LoadFile(cfg); err == nil {
+				t.Fatal("expected validation error")
+			}
+		})
+	}
+}
+
+func TestEmptyDetectorsBlockParses(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cfg := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(cfg, []byte("detectors: {}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadFile(cfg); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestCustomDetectorCookbookConfigShape(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.Chmod(dir, 0o700); err != nil {

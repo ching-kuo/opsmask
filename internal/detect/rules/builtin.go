@@ -27,7 +27,10 @@ func Builtins() []Spec {
 		{Name: "UUID", Type: "uuid", Pattern: `\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}\b`, Policy: policy.Pseudonymize, Keywords: []string{"-"}, MaxMatchSpan: 64},
 		{Name: "HexID", Type: "hex_id", Pattern: `\b[0-9a-fA-F]{32,128}\b`, Policy: policy.Pseudonymize, MaxMatchSpan: 256},
 		{Name: "Email", Type: "email", Pattern: `\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b`, Policy: policy.Pseudonymize, Keywords: []string{"@"}, MaxMatchSpan: 320},
-		{Name: "Hostname", Type: "hostname", Pattern: `\b(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,}\b`, Policy: policy.Pseudonymize, Keywords: []string{"."}, MaxMatchSpan: 256},
+		// Lowercase + 3+ labels excludes source dot-notation (`cmd.Flags`)
+		// and 2-label file extensions (`package.json`); 2-label public
+		// domains are still covered by Email/PasswordURL.
+		{Name: "Hostname", Type: "hostname", Pattern: `\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.){2,}[a-z]{2,24}\b`, Policy: policy.Pseudonymize, Keywords: []string{"."}, MaxMatchSpan: 256},
 		k8s("KubernetesNamespace", "k8snamespace", `(?:namespaces?|ns|namespace)`, "namespace", "Namespace", "ns"),
 		k8s("KubernetesPod", "k8spod", `pods?`, "pod", "Pod", "Pods"),
 		k8s("KubernetesDeployment", "k8sdeployment", `deploy(?:ments?|ment)?`, "deploy", "deployment", "Deployment"),
@@ -115,13 +118,38 @@ func secret(name, typ, pattern string, keywords []string, maxSpan, subMatch int,
 	}
 }
 
+// k8s builds a resource-name detector with three precision properties:
+//
+//  1. Only the noun (e.g. `nodes?`) is case-insensitive; the resource-name
+//     body is restricted to RFC 1123 DNS-subdomain lowercase. Avoids the
+//     false positive on tabular column headers like `NODE   NOMINATED` where
+//     the previous wholly-case-insensitive pattern would treat `NOMINATED`
+//     as a node name.
+//
+//  2. The prefix anchor excludes `-` and other word characters so the noun
+//     cannot match as a hyphen-suffix of a larger identifier. Closes a
+//     false positive where a resource named `nginx-ingress` followed by a
+//     class token (e.g. `nginx-ingress nginx`) would partial-match starting
+//     at the embedded `ingress`, producing visually confusing output like
+//     `nginx-[[opsmask:k8singress:…]]`.
+//
+//  3. Only the resource-name body is captured (SubMatch 1), so the noun and
+//     surrounding separator/quote are preserved in the masked output:
+//     `configmap "<name>" not found` becomes
+//     `configmap "[[opsmask:k8sconfigmap:…]]" not found`, not
+//     `[[opsmask:k8sconfigmap:…]]" not found`. The noun is not sensitive,
+//     and keeping it visible preserves the error's diagnostic context.
+//
+// `\n` is naturally covered by `[^A-Za-z0-9_-]`, so the pattern works at the
+// start of any line in a multi-line chunk without needing `(?m)`.
 func k8s(name, typ, nouns string, keywords ...string) Spec {
 	return Spec{
 		Name:         name,
 		Type:         typ,
-		Pattern:      `\b(?i:(?:` + nouns + `)(?:/|\s+(?:named\s+)?["']?)[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?)\b`,
+		Pattern:      `(?:^|[^A-Za-z0-9_-])(?i:` + nouns + `)(?:/|\s+(?:named\s+)?["']?)([a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?)\b`,
 		Policy:       policy.Pseudonymize,
 		Keywords:     keywords,
 		MaxMatchSpan: 160,
+		SubMatch:     1,
 	}
 }

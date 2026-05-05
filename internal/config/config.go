@@ -21,10 +21,11 @@ import (
 const MaxRules = 100
 
 type Config struct {
-	Literals   []Literal   `yaml:"literals"`
-	RegexRules []RegexRule `yaml:"regex_rules"`
-	DenyList   []DenyEntry `yaml:"deny_list"`
-	Exec       ExecConfig  `yaml:"exec"`
+	Literals   []Literal       `yaml:"literals"`
+	RegexRules []RegexRule     `yaml:"regex_rules"`
+	DenyList   []DenyEntry     `yaml:"deny_list"`
+	Exec       ExecConfig      `yaml:"exec"`
+	Detectors  DetectorsConfig `yaml:"detectors"`
 }
 
 type Literal struct {
@@ -45,6 +46,14 @@ type DenyEntry struct {
 	Name    string `yaml:"name"`
 	Literal string `yaml:"literal"`
 	Pattern string `yaml:"pattern"`
+}
+
+type DetectorsConfig struct {
+	Hostname HostnameDetectorConfig `yaml:"hostname"`
+}
+
+type HostnameDetectorConfig struct {
+	InternalTLDs []string `yaml:"internal_tlds"`
 }
 
 type ExecScope string
@@ -141,14 +150,15 @@ func (a *AllowEntry) UnmarshalYAML(value *yaml.Node) error {
 }
 
 type Loaded struct {
-	Rules        []detect.Rule
-	UserRules    []detect.Rule
-	ProjectRules []detect.Rule
-	DenyList     []DenyEntry
-	UserExec     ExecConfig
-	ProjectExec  ExecConfig
-	Warnings     []string
-	Untrusted    bool
+	Rules            []detect.Rule
+	UserRules        []detect.Rule
+	ProjectRules     []detect.Rule
+	DenyList         []DenyEntry
+	UserExec         ExecConfig
+	ProjectExec      ExecConfig
+	ProjectDetectors DetectorsConfig
+	Warnings         []string
+	Untrusted        bool
 }
 
 func Load(cwd string, stderr func(string), requireProjectTrust bool) (Loaded, error) {
@@ -169,6 +179,13 @@ func Load(cwd string, stderr func(string), requireProjectTrust bool) (Loaded, er
 		out.UserExec = cfg.Exec
 		if cfg.Exec.Enabled {
 			msg := fmt.Sprintf("user-wide exec.enabled in %s is ignored; enable exec only in a trusted project .opsmask/config.yaml", homeCfg)
+			out.Warnings = append(out.Warnings, msg)
+			if stderr != nil {
+				stderr(msg)
+			}
+		}
+		if detectorsConfigured(cfg.Detectors) {
+			msg := fmt.Sprintf("user-wide detectors block in %s is ignored; configure detectors via trusted project .opsmask/config.yaml", homeCfg)
 			out.Warnings = append(out.Warnings, msg)
 			if stderr != nil {
 				stderr(msg)
@@ -214,6 +231,7 @@ func Load(cwd string, stderr func(string), requireProjectTrust bool) (Loaded, er
 	out.ProjectRules = append(out.ProjectRules, rules...)
 	out.DenyList = append(out.DenyList, cfg.DenyList...)
 	out.ProjectExec = cfg.Exec
+	out.ProjectDetectors = cfg.Detectors
 	return out, nil
 }
 
@@ -226,7 +244,11 @@ func summarizeUntrusted(path string) string {
 	if cfg.Exec.Enabled {
 		execBlocks = 1
 	}
-	return fmt.Sprintf(" (pending: literals=%d regex_rules=%d deny_list=%d exec=%d)", len(cfg.Literals), len(cfg.RegexRules), len(cfg.DenyList), execBlocks)
+	detectorBlocks := 0
+	if detectorsConfigured(cfg.Detectors) {
+		detectorBlocks = 1
+	}
+	return fmt.Sprintf(" (pending: literals=%d regex_rules=%d deny_list=%d exec=%d detectors=%d)", len(cfg.Literals), len(cfg.RegexRules), len(cfg.DenyList), execBlocks, detectorBlocks)
 }
 
 func projectConfigEmpty(path string) (bool, error) {
@@ -234,7 +256,7 @@ func projectConfigEmpty(path string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return len(cfg.Literals) == 0 && len(cfg.RegexRules) == 0 && len(cfg.DenyList) == 0 && !cfg.Exec.Enabled, nil
+	return len(cfg.Literals) == 0 && len(cfg.RegexRules) == 0 && len(cfg.DenyList) == 0 && !cfg.Exec.Enabled && !detectorsConfigured(cfg.Detectors), nil
 }
 
 func LoadFile(path string) (Loaded, error) {
@@ -251,6 +273,7 @@ func LoadFile(path string) (Loaded, error) {
 	out.ProjectRules = rules
 	out.DenyList = cfg.DenyList
 	out.ProjectExec = cfg.Exec
+	out.ProjectDetectors = cfg.Detectors
 	return out, nil
 }
 
@@ -286,7 +309,46 @@ func parseConfig(path string) (Config, error) {
 	if err := validateExecConfig(&cfg.Exec); err != nil {
 		return Config{}, err
 	}
+	if err := validateDetectorsConfig(&cfg.Detectors); err != nil {
+		return Config{}, err
+	}
 	return cfg, nil
+}
+
+// internalTLDRE matches the Hostname rule's final-label class
+// (`[a-z]{2,24}` in builtin.go). Labels accepted here are guaranteed to
+// satisfy the regex prefilter; hyphens and digits are rejected so config
+// entries can't silently fail to ever match.
+var internalTLDRE = regexp.MustCompile(`^[a-z]{2,24}$`)
+
+func validateDetectorsConfig(d *DetectorsConfig) error {
+	seen := map[string]bool{}
+	for i, raw := range d.Hostname.InternalTLDs {
+		label := strings.TrimSpace(raw)
+		if label == "" {
+			return fmt.Errorf("detectors.hostname.internal_tlds[%d] is empty", i)
+		}
+		if !internalTLDRE.MatchString(label) {
+			return fmt.Errorf("detectors.hostname.internal_tlds[%d] %q is invalid; must be 2-24 lowercase letters (no digits, hyphens, or dots) to match the hostname final-label regex", i, raw)
+		}
+		if seen[label] {
+			return fmt.Errorf("detectors.hostname.internal_tlds[%d] duplicates %q", i, label)
+		}
+		status, reason := detect.ReservedTLDStatus(label)
+		switch status {
+		case detect.TLDDefaultInternal:
+			return fmt.Errorf("detectors.hostname.internal_tlds[%d] %q is already a default RFC-reserved internal TLD (%s)", i, label, reason)
+		case detect.TLDCollision:
+			return fmt.Errorf("detectors.hostname.internal_tlds[%d] %q collides with fixed code/log compatibility-exception ccTLD set (%s); use project-defined regex_rules to mask .%s-suffix paths", i, label, reason, label)
+		}
+		seen[label] = true
+		d.Hostname.InternalTLDs[i] = label
+	}
+	return nil
+}
+
+func detectorsConfigured(d DetectorsConfig) bool {
+	return len(d.Hostname.InternalTLDs) > 0
 }
 
 func validateExecConfig(e *ExecConfig) error {

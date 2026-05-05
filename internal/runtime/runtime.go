@@ -77,6 +77,14 @@ func New(opts Options) (*Env, error) {
 		if explicit.ProjectExec.Enabled {
 			fmt.Fprintf(warn, "warning: exec settings in --config %s are ignored; exec must be enabled via trusted .opsmask/config.yaml\n", opts.Config)
 		}
+		if len(explicit.ProjectDetectors.Hostname.InternalTLDs) > 0 {
+			fmt.Fprintf(warn, "warning: detector settings in --config %s are ignored; detectors must be configured via trusted .opsmask/config.yaml\n", opts.Config)
+		}
+	}
+	for i := range builtins {
+		if builtins[i].Type == "hostname" {
+			builtins[i].Check = detect.HostnameCheckFor(loaded.ProjectDetectors.Hostname.InternalTLDs)
+		}
 	}
 	rules := append(builtins, loaded.Rules...)
 	return &Env{Store: st, Alloc: pseudo.New(secret, st), Rules: rules, Loaded: loaded}, nil
