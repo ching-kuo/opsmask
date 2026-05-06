@@ -12,14 +12,18 @@ to an LLM, then restores them at a TTY when the report comes back.
   infrastructure identifiers; project-local rules cover application IDs.
 
 ```text
-                ┌──────────────┐    masked     ┌─────────┐
-   raw logs ──▶ │ opsmask mask │ ────────────▶ │   LLM   │
-                └──────────────┘               └────┬────┘
-                                                    │ masked report
-                                  ┌──────────────┐  │
-   plaintext ◀───── (TTY) ─────── │   opsmask    │ ◀┘
-                                  │    unmask    │
-                                  └──────────────┘
+                     ┌──────────────┐    masked text    ┌─────────┐
+   raw logs ───────▶ │ opsmask mask │ ────────────────▶ │   LLM   │
+                     └──────┬───────┘                   └────┬────┘
+                            │ writes mapping                 │
+                            ▼                                │ masked report
+              <project>/.opsmask/mapping.sqlite              │ (sentinels echoed)
+                            ▲                                │
+                            │ reads mapping                  │
+                     ┌──────┴───────┐                        │
+   plaintext ◀───────│ opsmask      │ ◀──────────────────────┘
+                (TTY)│  unmask      │
+                     └──────────────┘
 ```
 
 ## When to use it
@@ -41,33 +45,96 @@ It is **not** the right tool for:
 - Defending against a malicious LLM that ignores instructions to preserve
   sentinels — OpsMask is a leakage-reduction tool, not a sandbox.
 
+## Prerequisites
+
+- **Go 1.26+** to build from source.
+- **A writable user-config directory.** The user-wide secret used to seed
+  pseudonymization is generated on first run (mode `0600`) under
+  `os.UserConfigDir()`: `~/.config/opsmask/user_secret` on Linux,
+  `~/Library/Application Support/opsmask/user_secret` on macOS,
+  `%AppData%\opsmask\user_secret` on Windows. Keep this directory on local
+  disk — it is rejected on network filesystems.
+- **A TTY for `unmask`.** `opsmask unmask` refuses to write to a
+  non-terminal stdout to avoid accidentally piping plaintext into a file or
+  another program. There is no bypass flag; this is intentional.
+- **Optional: a git repository.** Required for `opsmask install claude-code`,
+  not for plain `mask`/`unmask`.
+
 ## Install
 
-Download a release archive containing the `opsmask` binary and the
-companion skill, or build locally:
+Build from source (no signed binaries are published yet):
 
 ```sh
+# from the repository root
 go build -o ./bin/opsmask ./cmd/opsmask
+sudo mv ./bin/opsmask /usr/local/bin/opsmask   # or any directory on PATH
 ```
+
+On macOS, an unsigned binary built locally runs without Gatekeeper prompts.
+If you copy the binary from another machine, clear the quarantine attribute:
+
+```sh
+xattr -d com.apple.quarantine /usr/local/bin/opsmask
+```
+
+## Smoke test (no cluster needed)
+
+Confirm the install before wiring it into anything:
+
+```sh
+echo "alice@example.com from 10.0.0.1 hit api.example.com" | opsmask mask
+```
+
+Expected output (token indexes will differ):
+
+```text
+⟪opsmask:email:01af3c1d…⟫ from ⟪opsmask:ip4:7c93a4ed…⟫ hit ⟪opsmask:hostname:b1d2e3f4…⟫
+```
+
+The pipeline above works **without** running `opsmask init` or `config trust` —
+built-in detectors are always active. `init` and `config trust` only unlock
+project-specific extensions (custom regex rules, internal TLDs, the `exec`
+follow-up surface). See [Configuration](#configuration).
+
+## Pick your integration
+
+| Path | Use when | Start here |
+| --- | --- | --- |
+| **Plain CLI** | You drive the LLM via copy/paste or your own scripts. | [Quick start](#quick-start) |
+| **Claude Code hook** | You use Claude Code and want non-trivial Bash output masked automatically. | [Claude Code Bash hook](#claude-code-bash-hook) |
+| **MCP server** | You use Claude Desktop, Cursor, Copilot, or another MCP client. | [MCP server](#mcp-server) |
+
+The three paths are independent — pick one to start, add others later.
 
 ## Quick start
 
 ```sh
-# 1. Initialize a project (one-time)
+# 1. (Optional) Initialize a project for custom rules and exec follow-up.
+#    Skip this if you only need built-in detectors.
 opsmask init
 opsmask config trust
 
-# 2. Mask logs before sending them to the LLM
+# 2. Mask logs before sending them to the LLM.
 kubectl logs deploy/api | opsmask mask --summary > masked.log
 
-# 3. Paste masked.log into your LLM session, get a report back
+# 3. Paste masked.log into your LLM session, get a report back as report.md.
 
-# 4. Restore sentinels at your terminal (never inside the agent)
+# 4. Restore sentinels at your terminal (never inside the agent).
 opsmask unmask < report.md
 ```
 
-`unmask` refuses non-TTY stdout to reduce the chance of accidentally piping
-plaintext somewhere durable.
+### Tell your LLM this
+
+The LLM must echo sentinels **verbatim** (no paraphrasing, lowercasing, or
+splitting) for `unmask` to restore them. If you use Claude Code, the
+[`skill/opsmask`](skill/opsmask/SKILL.md) directory ships a Skill that
+encodes this contract. For other clients, paste a system prompt like:
+
+> The text I share has been pseudonymized by OpsMask. Tokens of the form
+> `⟪opsmask:<type>:<index>⟫`, `[[opsmask:<type>:<index>]]`, and
+> `[OPSMASK_ESCAPED_SENTINEL:...]` are placeholders for real values. Do not
+> paraphrase, modify, lowercase, split, or "clean up" these tokens. Echo
+> them character-for-character in your reply.
 
 ### Round-trip example
 
@@ -83,10 +150,25 @@ After `opsmask mask`:
 customer Example Corp from ⟪opsmask:email:01af3c1d2b4e5f60⟫ hit ⟪opsmask:ip4:7c93a4ed1b209f88⟫
 ```
 
-The LLM works on the masked text and must echo sentinels verbatim. Then
-`unmask` reverses them locally.
+`unmask` reverses the sentinels locally once the LLM's report comes back.
+
+## Token forms
+
+Three forms can appear in masked output. Agents must preserve them
+character-for-character:
+
+- **Unicode sentinel**: `⟪opsmask:<type>:<index>⟫` (default).
+- **ASCII fallback**: `[[opsmask:<type>:<index>]]` — used when input is
+  strict-ASCII or when `--ascii-tokens` is passed. Pick this when your LLM
+  client mangles non-ASCII characters or your downstream tooling is not
+  Unicode-clean.
+- **Inert escape**: `[OPSMASK_ESCAPED_SENTINEL:<base64url>]` — planted before
+  masking when source text already looks like a sentinel; decoded back to
+  literal bytes during `unmask`.
 
 ## Commands
+
+**Setup**
 
 | Command | Purpose |
 | --- | --- |
@@ -94,16 +176,52 @@ The LLM works on the masked text and must echo sentinels verbatim. Then
 | `opsmask config` | Show current config status. |
 | `opsmask config init` | Same scaffold as `init`, from the config command group. |
 | `opsmask config trust` | Trust the current project config (path + SHA-256 bound). |
-| `opsmask mask [file\|-]` | Mask stdin or a file. Flags: `--summary`, `--ascii-tokens`, `--max-line` (default `16MiB`). |
+
+**Runtime**
+
+| Command | Purpose |
+| --- | --- |
+| `opsmask mask [file\|-]` | Mask stdin or a file. Flags: `--summary`, `--ascii-tokens`, `--max-line` (default `16MiB`; raise it for very long single-line JSON or stack traces). |
 | `opsmask unmask [file\|-]` | Restore tokens. TTY-only. |
 | `opsmask exec -- <cmd> [args...]` | Run a follow-up command with sentinels in argv; output is re-masked before it returns. |
+
+**Integrations**
+
+| Command | Purpose |
+| --- | --- |
 | `opsmask install claude-code [--team-shared]` | Install the Claude Code Bash hook for the current git project. |
 | `opsmask uninstall claude-code` | Remove the Claude Code hook from the current git project. |
-| `opsmask mapping list [--type T] [--limit N]` | List pseudonyms (no plaintext). TTY-only. |
-| `opsmask mapping prune --older-than <duration> [--type T]` | Delete old mapping rows. `--older-than` is required. |
 | `opsmask mcp serve` | Run the Model Context Protocol server on stdio for LLM clients. |
 
+**Admin**
+
+| Command | Purpose |
+| --- | --- |
+| `opsmask mapping list [--type T] [--limit N]` | List pseudonyms (no plaintext). TTY-only. |
+| `opsmask mapping prune --older-than <duration> [--type T]` | Delete old mapping rows. `--older-than` is required. |
+
 Global flags: `--config <path>`, `--mapping <path>`, `--verbose`.
+
+## State and storage
+
+OpsMask keeps state in two places:
+
+- **User-config directory** (Go's `os.UserConfigDir()` + `opsmask/`):
+  `~/.config/opsmask/` on Linux, `~/Library/Application Support/opsmask/`
+  on macOS, `%AppData%\opsmask\` on Windows. Holds `user_secret` (the
+  32-byte HMAC key that seeds deterministic pseudonymization),
+  `exec.log`, `pass_through.log`, and `mcp_calls.jsonl`. Back this
+  directory up; keep it out of cloud sync (Dropbox, iCloud Drive, etc.).
+- **`<project>/.opsmask/`** — per-project config (`config.yaml`) and the
+  mapping store (`mapping.sqlite`). Add `.opsmask/` to `.gitignore`;
+  never commit it.
+
+Pseudonymization is deterministic per `user_secret`. Two machines with
+different secrets produce different sentinels for the same input, even with
+identical project config. Existing mapping rows already on disk remain
+restorable by `unmask` regardless of the secret — `unmask` looks up by
+token index — but if you lose `user_secret`, future masking on a fresh
+project produces sentinels that differ from any prior run.
 
 ## Claude Code Bash hook
 
@@ -114,6 +232,18 @@ stderr are masked before they can enter the agent context. The default install
 writes `.claude/settings.local.json` and adds it to `.gitignore`; pass
 `--team-shared` to write `.claude/settings.json` after accepting the teammate
 fail-closed warning.
+
+Trivial commands on a built-in skiplist (`ls`, `pwd`, `git status`, and
+similar read-only Bash) pass through **unwrapped** and unmasked — their
+output is logged to `pass_through.log` for audit but is not run through the
+detector pipeline. Wrapped invocations are logged to `exec.log`. Treat the
+hook as a safety net for production-shaped output, not as a guarantee that
+every Bash result is masked.
+
+Install bakes the resolved binary path into `.claude/opsmask-hook.sh`. If
+you move or rename the `opsmask` binary after running `install claude-code`,
+re-run `opsmask install claude-code` so the hook script picks up the new
+path.
 
 This is a deliberate second operating mode:
 
@@ -229,18 +359,6 @@ defaults to `~/.config/opsmask/`):
   client). No MCP tool surface exposes audit-failure status — exposing
   even a sticky boolean would create a denial-of-service oracle.
 
-## Token forms
-
-Three forms can appear in masked output. Agents must preserve them
-character-for-character:
-
-- Unicode sentinel: `⟪opsmask:<type>:<index>⟫` (default).
-- ASCII fallback: `[[opsmask:<type>:<index>]]` (used when input is
-  strict-ASCII or when `--ascii-tokens` is passed).
-- Inert escape: `[OPSMASK_ESCAPED_SENTINEL:<base64url>]` (planted before
-  masking when source text already looks like a sentinel; decoded back to
-  literal bytes during `unmask`).
-
 ## What gets detected
 
 Common secret/token detectors are derived from a pinned review of the
@@ -256,18 +374,26 @@ Two policies apply:
 - **Destroy** — value is replaced with `[REDACTED_<TYPE>]` and not stored.
   `unmask` cannot recover it.
 
+The detectors you will see most often:
+
 | Type | Policy | Matches |
 | --- | --- | --- |
 | `ip4` | Pseudonymize | Dotted-quad IPv4 with each octet 0–255. |
 | `ip6` | Pseudonymize | Full or `::`-compressed IPv6. Three-group strings like log timestamps `16:23:37` are excluded. |
-| `mac` | Pseudonymize | Six colon-separated hex bytes. |
-| `uuid` | Pseudonymize | RFC 4122 v1–v5 with hyphens. |
-| `hex_id` | Pseudonymize | Plain hex run of 32–128 chars (MD5/SHA/long IDs). |
 | `email` | Pseudonymize | Standard `local@domain.tld` shape. |
-| `hostname` | Pseudonymize | RFC-1123-ish hostnames/FQDNs (≥3 labels, alphabetic TLD) whose suffix is recognized by the Public Suffix List or configured as internal. |
+| `hostname` | Pseudonymize | RFC-1123-ish hostnames/FQDNs whose suffix is recognized by the Public Suffix List or configured as internal. |
 | `k8snamespace`, `k8spod`, `k8snode`, … | Pseudonymize | Kubernetes resource references with nearby resource nouns. |
 | `jwt` | Destroy | JWT-shaped strings with valid header (`alg`/`typ`) and a common payload claim. |
 | `pem_private_key` | Destroy | `-----BEGIN ... PRIVATE KEY-----` blocks. |
+
+<details>
+<summary>All other built-in detectors (cloud, SaaS, generic IDs)</summary>
+
+| Type | Policy | Matches |
+| --- | --- | --- |
+| `mac` | Pseudonymize | Six colon-separated hex bytes. |
+| `uuid` | Pseudonymize | RFC 4122 v1–v5 with hyphens. |
+| `hex_id` | Pseudonymize | Plain hex run of 32–128 chars (MD5/SHA/long IDs). |
 | `password_url` | Destroy | URLs with embedded `user:pass@host` credentials. |
 | `aws_key` | Destroy | AWS access keys (`AKIA…`, `ASIA…`, `ABIA…`, `ACCA…`, `A3T…`). |
 | `github_token` | Destroy | GitHub PATs and tokens (`ghp_`, `gho_`, `ghu_`, `ghs_`, `ghr_`, `github_pat_`). |
@@ -287,6 +413,8 @@ Two policies apply:
 | `linear_token` | Destroy | Linear API keys (`lin_api_`). |
 | `postman_key` | Destroy | Postman access keys (`PMAK-`). |
 
+</details>
+
 Hostname/FQDN detection uses the Public Suffix List for registered ICANN and
 private suffixes, plus a small default internal-TLD set (`local`, `internal`,
 `lan`, `home`, `localhost`, `arpa`, `corp`, `intranet`, `test`).
@@ -296,8 +424,14 @@ see [docs/CUSTOM_DETECTORS.md](docs/CUSTOM_DETECTORS.md).
 
 ## Configuration
 
-Project config lives at `.opsmask/config.yaml`. It is **ignored until
-trusted**:
+Project config lives at `.opsmask/config.yaml`. **Built-in detectors run
+without it.** A project config is only required to:
+
+- Add custom `regex_rules` for application-specific IDs.
+- Extend hostname masking with `detectors.hostname.internal_tlds`.
+- Enable the `exec` follow-up surface.
+
+The config file is **ignored until trusted**:
 
 ```sh
 opsmask config trust
@@ -380,7 +514,7 @@ exec:
 
 `curl` and `wget` are not in any baseline; allow them explicitly when needed.
 
-`exec` writes JSON-lines audit records to `~/.config/opsmask/exec.log`
+`exec` writes JSON-lines audit records to the user-config directory's `exec.log` (`~/.config/opsmask/exec.log` on Linux; the platform-equivalent path elsewhere)
 (mode `0600`). Each invocation writes two records: a `"starting"` record
 before the child process runs (with argv, scope, policy match, env-shaping
 counts) and a final record afterward (with `exit_code`, `duration_ms`,
@@ -400,6 +534,41 @@ command-dispatch variables (`BASH_ENV`, `LD_PRELOAD`, `PYTHONPATH`,
 Project `exec.env_allow` adds tool-specific variables; `exec.env_deny` always
 wins.
 
+## Troubleshooting
+
+**`opsmask unmask` exits with `unmask refuses to write to non-TTY stdout`.**
+Run `unmask` interactively. Redirecting to a file or pipe is intentionally
+blocked — there is no flag to override it. If you need plaintext in a file,
+copy from your terminal scrollback after the fact.
+
+**`config trust` keeps rejecting the project.** Trust binds to the resolved
+path and SHA-256 of the file. Re-running `config trust` after every edit is
+expected. If you opened the project through a symlink, run `config trust`
+from the resolved real path.
+
+**Custom `regex_rules` are ignored.** Confirm two things: (1) the config is
+at `.opsmask/config.yaml` (not passed via `--config`), and (2) you ran
+`opsmask config trust` after the most recent edit. `--config` overrides
+cannot satisfy the trust gate.
+
+**The Claude Code hook is not firing.** Check `.claude/settings.local.json`
+exists and contains an `opsmask` `PreToolUse` entry; reinstall with
+`opsmask install claude-code` if missing. Pass-through events are logged to
+`pass_through.log` in the user-config directory. If you moved or renamed the
+`opsmask` binary after running `install`, re-run `opsmask install claude-code`
+to refresh the binary path baked into `.claude/opsmask-hook.sh`.
+
+**Mappings appear out of sync between machines.** `user_secret` is per
+machine. Copy the `user_secret` file from one machine's user-config
+directory to the other (mode `0600`) before any masking happens there.
+
+**Removing OpsMask state.** To wipe everything: remove the user-config
+directory (`~/.config/opsmask/` on Linux, `~/Library/Application Support/opsmask/`
+on macOS, `%AppData%\opsmask\` on Windows) and any per-project `.opsmask/`
+directories. To uninstall the Claude Code hook for one project:
+`opsmask uninstall claude-code`. The binary itself can be deleted from
+wherever you installed it on `PATH`.
+
 ## Limitations
 
 OpsMask reduces leakage on the CLI pipe path. It does **not** protect:
@@ -414,8 +583,8 @@ OpsMask reduces leakage on the CLI pipe path. It does **not** protect:
 Pseudonymization is deterministic per `user_secret`. That property is
 intentional — it lets correlated lines stay correlated — but it means an LLM
 that echoes a sentinel back in plaintext form leaks information. Treat token
-reflection as an expected failure mode, and keep `~/.config/opsmask` and
-project `.opsmask/` directories out of cloud-sync and shared-backup paths.
+reflection as an expected failure mode, and keep the user-config directory
+and project `.opsmask/` directories out of cloud-sync and shared-backup paths.
 
 `exec` runs a real child process after resolving sentinels in argv. Scope
 tiers and the hard deny-list reduce that surface, but they do not provide
