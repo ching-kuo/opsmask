@@ -443,6 +443,9 @@ End-user documentation:
   — worked Kubernetes triage example.
 - [BENCHMARKS.md](BENCHMARKS.md) — local benchmark numbers.
 - [CHANGELOG.md](CHANGELOG.md) — release notes.
+- [testdata/corpus/README.md](testdata/corpus/README.md) — how to guard
+  a detection bug fix against regression with the corpus harness
+  (`opsmask corpus add | accept | list`).
 
 ## License
 

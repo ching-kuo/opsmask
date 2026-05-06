@@ -4,6 +4,13 @@
 
 ### Added
 
+- **Detection regression corpus + `opsmask corpus` CLI** (`add` / `accept` /
+  `list`). Scenarios under `testdata/corpus/<name>/{input.txt,expected.txt}`
+  are run through the production engine pipeline by `TestCorpus` as part of
+  `go test ./...`; tokens are canonicalized (IDs replaced with `*`) so
+  goldens stay stable across allocator-secret changes. The CLI subcommands
+  use an ephemeral SQLite mapping store and do not touch the project's
+  persistent state. See `testdata/corpus/README.md` for the workflow.
 - **`opsmask install claude-code` / `opsmask uninstall claude-code`** for a
   project-scoped Claude Code Bash `PreToolUse` hook. Install rolls back the
   shim and settings entry if registry write fails; uninstall propagates
