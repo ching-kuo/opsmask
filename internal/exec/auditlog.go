@@ -17,8 +17,9 @@ const auditMaxLine = 4095
 // rejected at write time so call-site bypass via bare composite-literal
 // construction surfaces as an error rather than producing a malformed line.
 const (
-	SourceCLI = "cli"
-	SourceMCP = "mcp"
+	SourceCLI  = "cli"
+	SourceMCP  = "mcp"
+	SourceHook = "hook"
 )
 
 type Record struct {
@@ -57,8 +58,16 @@ func NormalizeSource(s string) string {
 }
 
 func WriteRecord(rec Record) error {
-	if rec.Source != SourceCLI && rec.Source != SourceMCP {
-		return fmt.Errorf("audit: invalid Record.Source %q (must be %q or %q); use NewRecord", rec.Source, SourceCLI, SourceMCP)
+	return writeRecordTo("exec.log", rec)
+}
+
+func WritePassThroughRecord(rec Record) error {
+	return writeRecordTo("pass_through.log", rec)
+}
+
+func writeRecordTo(name string, rec Record) error {
+	if rec.Source != SourceCLI && rec.Source != SourceMCP && rec.Source != SourceHook {
+		return fmt.Errorf("audit: invalid Record.Source %q (must be %q, %q, or %q); use NewRecord", rec.Source, SourceCLI, SourceMCP, SourceHook)
 	}
 	if rec.Ts.IsZero() {
 		rec.Ts = time.Now()
@@ -67,7 +76,7 @@ func WriteRecord(rec Record) error {
 	if err != nil {
 		return err
 	}
-	f, _, err := openAuditLog()
+	f, _, err := OpenAppendLog(name)
 	if err != nil {
 		return err
 	}

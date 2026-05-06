@@ -45,7 +45,7 @@ func Run(ctx context.Context, argv []string, opts RunOptions) RunResult {
 		opts.KillGrace = 5 * time.Second
 	}
 	cmd := osexec.Command(argv[0], argv[1:]...)
-	cmd.Env = opts.Env
+	cmd.Env = injectExecChild(opts.Env)
 	cmd.Stdin = opts.Stdin
 	setProcessGroup(cmd)
 	// Manage pipes manually instead of StdoutPipe/StderrPipe. cmd.Wait closes
