@@ -124,6 +124,28 @@ func TestKubernetesRulesRejectHyphenSuffixNoun(t *testing.T) {
 	}
 }
 
+// Guards two regressions: YAML newline separator and dotted-path tail.
+func TestKubernetesRulesRejectYAMLAndPathSeparators(t *testing.T) {
+	for _, tc := range []struct {
+		rule  string
+		input string
+	}{
+		{"KubernetesSecret", "kind: Secret\nmetadata:"},
+		{"KubernetesSecret", "kind: Secret\n  metadata:"},
+		{"KubernetesSecret", "/var/run/secrets/kubernetes.io/serviceaccount"},
+		{"KubernetesConfigMap", "kind: ConfigMap\nmetadata:"},
+		{"KubernetesNamespace", "kind: Namespace\nmetadata:"},
+		{"KubernetesPod", "kind: Pod\nmetadata:"},
+		{"KubernetesService", "/var/run/services/kubernetes.io/spec"},
+	} {
+		t.Run(tc.rule+"/"+tc.input, func(t *testing.T) {
+			if compile(t, tc.rule).MatchString(tc.input) {
+				t.Fatalf("%s rule unexpectedly matched %q", tc.rule, tc.input)
+			}
+		})
+	}
+}
+
 // TestKubernetesRulesCaptureNameOnly ensures only the resource-name body is
 // returned in SubMatch 1 (the engine replaces only that span). Verifies the
 // noun and surrounding separator/quote are preserved in the masked output —
@@ -142,6 +164,9 @@ func TestKubernetesRulesCaptureNameOnly(t *testing.T) {
 		{"KubernetesNode", "node/worker-1", "worker-1"},
 		{"KubernetesNode", "Node worker-1", "worker-1"},
 		{"KubernetesPod", `Pods named "queue-worker-77"`, "queue-worker-77"},
+		{"KubernetesSecret", "secrets/my-app-secret", "my-app-secret"},
+		{"KubernetesSecret", `secret "my-app-secret" not found`, "my-app-secret"},
+		{"KubernetesPod", "pod/x", "x"},
 	} {
 		t.Run(tc.rule+"/"+tc.input, func(t *testing.T) {
 			spec := findSpec(t, tc.rule)
