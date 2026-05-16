@@ -11,6 +11,16 @@ to an LLM, then restores them at a TTY when the report comes back.
 - **Extensible.** Built-in detectors cover common cloud/SaaS secrets and
   infrastructure identifiers; project-local rules cover application IDs.
 
+> **⚠️ Project status: early / under-tested.** This is a personal project
+> that has only been exercised against the author's own workflows. It has
+> **not** been validated at scale, against adversarial inputs, or in
+> production environments. Detector coverage is incomplete by design —
+> any new secret format that isn't in the rule set will pass through
+> unmasked. Treat OpsMask as a **leakage-reduction aid**, never as a
+> sole control protecting sensitive data. Review masked output before
+> sending it to an LLM, especially during initial adoption. Bug reports
+> and missed-detection samples are welcome via GitHub issues.
+
 ```text
                      ┌──────────────┐    masked text    ┌─────────┐
    raw logs ───────▶ │ opsmask mask │ ────────────────▶ │   LLM   │
