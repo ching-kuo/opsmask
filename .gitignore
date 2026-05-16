@@ -12,11 +12,16 @@
 /.gemini/
 /.qoder/
 /.vscode/
+/.kiro/
 /.mcp.json
 /.opencode.json
+/.cursorrules
+/.windsurfrules
 
 # Project memory / internal notes (not for public repo)
 /CLAUDE.md
+/AGENTS.md
+/GEMINI.md
 /docs/competitive-analysis.md
 
 # Databases
@@ -25,3 +30,6 @@
 
 # OS metadata
 .DS_Store
+# Added by code-review-graph
+.code-review-graph/
+.claude/settings.local.json

@@ -147,6 +147,12 @@
 - **`validK8sName` Check rejects duration-shaped candidates** (`10h`, `5d`,
   `1d2h`) so kubectl AGE column values are no longer masked as node names.
   Pure-digit names are also rejected.
+- **Kubernetes detector no longer crosses YAML newlines or dotted path
+  segments.** The noun-to-name separator is restricted to `[ \t]+` (not
+  `\s+`), so `kind: Secret\nmetadata:` no longer captures `metadata` as a
+  secret name across the newline. The trailing assertion rejects names
+  followed by `.`, so `/var/run/secrets/kubernetes.io/serviceaccount` no
+  longer masks `kubernetes` as a secret name.
 - **`internal/cchook` handler tests** are now robust against an inherited
   `OPSMASK_EXEC_CHILD=1` (which can leak in when the suite is launched
   through the OpsMask Claude Code hook itself).

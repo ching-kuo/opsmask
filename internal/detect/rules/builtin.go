@@ -141,12 +141,16 @@ func secret(name, typ, pattern string, keywords []string, maxSpan, subMatch int,
 //     and keeping it visible preserves the error's diagnostic context.
 //
 // `\n` is naturally covered by `[^A-Za-z0-9_-]`, so the pattern works at the
-// start of any line in a multi-line chunk without needing `(?m)`.
+// start of any line in a multi-line chunk without needing `(?m)`. The
+// inter-token separator is `[ \t]+` (not `\s+`) so a YAML newline cannot
+// bridge `kind: Secret` to the next key. The trailing assertion
+// `(?:[^.A-Za-z0-9_-]|$)` rejects names followed by `.` so dotted hostnames
+// inside paths (e.g. `kubernetes.io`) do not capture.
 func k8s(name, typ, nouns string, keywords ...string) Spec {
 	return Spec{
 		Name:         name,
 		Type:         typ,
-		Pattern:      `(?:^|[^A-Za-z0-9_-])(?i:` + nouns + `)(?:/|\s+(?:named\s+)?["']?)([a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?)\b`,
+		Pattern:      `(?:^|[^A-Za-z0-9_-])(?i:` + nouns + `)(?:/|[ \t]+(?:named[ \t]+)?["']?)([a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?)(?:[^.A-Za-z0-9_-]|$)`,
 		Policy:       policy.Pseudonymize,
 		Keywords:     keywords,
 		MaxMatchSpan: 160,
