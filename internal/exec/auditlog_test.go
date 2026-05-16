@@ -87,15 +87,6 @@ func TestWriteRecordRoundtrip(t *testing.T) {
 	}
 }
 
-func TestNormalizeSourceForLegacyLines(t *testing.T) {
-	if got := maskexec.NormalizeSource(""); got != "cli" {
-		t.Fatalf("empty source normalizes to %q, want cli", got)
-	}
-	if got := maskexec.NormalizeSource("mcp"); got != "mcp" {
-		t.Fatalf("mcp source normalizes to %q, want mcp", got)
-	}
-}
-
 func TestEnsureAuditDirHonorsEnv(t *testing.T) {
 	dir := setAuditDir(t)
 	got, err := maskexec.EnsureAuditDir()
@@ -125,7 +116,7 @@ func TestEnsureAuditDirRefusesWideMode(t *testing.T) {
 // mcp_calls.jsonl piggy-backs on.
 func TestExecLogMultiProcessAppend(t *testing.T) {
 	if os.Getenv("OPSMASK_AUDIT_CHILD") == "1" {
-		childAppend(os.Getenv("OPSMASK_AUDIT_DIR"))
+		childAppend()
 		return
 	}
 	if runtime.GOOS == "windows" {
@@ -178,7 +169,7 @@ func TestExecLogMultiProcessAppend(t *testing.T) {
 	}
 }
 
-func childAppend(dir string) {
+func childAppend() {
 	count := 0
 	fmt.Sscanf(os.Getenv("OPSMASK_AUDIT_COUNT"), "%d", &count)
 	tag := os.Getenv("OPSMASK_AUDIT_TAG")
@@ -191,7 +182,6 @@ func childAppend(dir string) {
 			os.Exit(1)
 		}
 	}
-	_ = dir
 }
 
 // TestRecordLiteralASTDriftBlocksExternalConstruction is the drift-prevention

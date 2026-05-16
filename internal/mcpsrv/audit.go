@@ -51,7 +51,9 @@ func OpenAuditWriter() (*AuditFile, error) {
 // Write appends a single record as a JSON line. The mutex serializes the
 // nil check and the syscall so a concurrent Close cannot retire a.f
 // between the two; POSIX append-mode atomicity covers cross-process
-// safety for line-sized writes.
+// safety for line-sized writes. The receiver-nil guard preserves the
+// fail-open contract documented on AuditWriter: a typed-nil *AuditFile
+// stored in the interface must not panic.
 func (a *AuditFile) Write(rec McpCallRecord) error {
 	if a == nil {
 		return fmt.Errorf("audit writer is nil")

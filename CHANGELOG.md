@@ -93,6 +93,12 @@
 - **`store.SQLite.List` and `ListTokens` share one `selectMappings`
   helper** so the WHERE/ORDER/LIMIT plumbing is single-sourced. No
   external API change.
+- **Engine `maskChunk` skips the per-chunk `[]pseudo.Plan`
+  allocation and `alloc.CommitPlans` round-trip** when a chunk has
+  matches but none use `policy: pseudonymize` (e.g. all-destroy
+  rules). Hoists the cached `detect.TokenRegexp()` out of the
+  per-arg loop in `internal/exec.Resolve` and drops a redundant
+  `tokenProbe` clamp in `engine.isStrictASCIIPrefix`.
 
 ### Changed
 

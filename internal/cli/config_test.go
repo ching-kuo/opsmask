@@ -135,7 +135,6 @@ func TestExecConfigOverrideCannotEnableExec(t *testing.T) {
 	if !strings.Contains(stderr, "exec disabled") && !strings.Contains(stderr, "exec must be enabled via trusted") {
 		t.Fatalf("stderr = %q, want disabled-exec or trust-warning message", stderr)
 	}
-	_ = configpkg.Loaded{} // keep import used
 }
 
 func executeCLI(t *testing.T, args []string, stdin string) (string, error) {

@@ -46,16 +46,6 @@ func NewRecord(source string) Record {
 	return Record{Ts: time.Now(), Source: source}
 }
 
-// NormalizeSource maps an empty Source string read from a pre-MCP audit log
-// to the canonical "cli" value. This is used only by readers; WriteRecord
-// rejects empty Source values on write.
-func NormalizeSource(s string) string {
-	if s == "" {
-		return SourceCLI
-	}
-	return s
-}
-
 func WriteRecord(rec Record) error {
 	if rec.Source != SourceCLI && rec.Source != SourceMCP {
 		return fmt.Errorf("audit: invalid Record.Source %q (must be %q or %q); use NewRecord", rec.Source, SourceCLI, SourceMCP)

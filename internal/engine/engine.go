@@ -136,14 +136,20 @@ func maskChunk(ctx context.Context, b []byte, rules []detect.Rule, alloc *pseudo
 	if len(ms) == 0 {
 		return b, nil
 	}
-	plans := make([]pseudo.Plan, len(ms))
+	var plans []pseudo.Plan
 	for i, m := range ms {
-		if m.Rule.Policy == policy.Pseudonymize {
-			plans[i] = alloc.Plan(m.Rule.Type, m.Value)
+		if m.Rule.Policy != policy.Pseudonymize {
+			continue
 		}
+		if plans == nil {
+			plans = make([]pseudo.Plan, len(ms))
+		}
+		plans[i] = alloc.Plan(m.Rule.Type, m.Value)
 	}
-	if err := alloc.CommitPlans(ctx, plans); err != nil {
-		return nil, err
+	if plans != nil {
+		if err := alloc.CommitPlans(ctx, plans); err != nil {
+			return nil, err
+		}
 	}
 	var out bytes.Buffer
 	pos := 0
@@ -186,11 +192,7 @@ func alignUTF8Boundary(b []byte, cut int) int {
 }
 
 func isStrictASCIIPrefix(b []byte) bool {
-	limit := len(b)
-	if limit > tokenProbe {
-		limit = tokenProbe
-	}
-	for _, c := range b[:limit] {
+	for _, c := range b {
 		if c >= 0x80 {
 			return false
 		}

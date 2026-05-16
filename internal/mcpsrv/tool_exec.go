@@ -139,9 +139,6 @@ func handleExec(ctx context.Context, rt *runtime.Env, in ExecInput, caps Caps) (
 // error and serializes both the code (in structured content) and the human
 // message (in text content); clients should branch on ErrorCode.
 func execFailure(code, detail string) (ExecOutput, error) {
-	if detail == "" {
-		return ExecOutput{ErrorCode: code}, errors.New(code)
-	}
 	return ExecOutput{ErrorCode: code}, fmt.Errorf("%s: %s", code, detail)
 }
 

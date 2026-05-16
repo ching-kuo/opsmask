@@ -35,16 +35,16 @@ type ScanMatch struct {
 // cancellation in practice; the bound depends on FindMatches' inner loop
 // which the standard regexp package does not interrupt.
 func Scan(ctx context.Context, b []byte, rules []Rule) (ScanStats, []ScanMatch, error) {
-	stats := ScanStats{ByType: map[string]int{}}
 	if err := ctx.Err(); err != nil {
-		return stats, nil, err
+		return ScanStats{}, nil, err
 	}
+	stats := ScanStats{ByType: map[string]int{}}
 	if len(b) == 0 || len(rules) == 0 {
 		return stats, nil, nil
 	}
 	matches := FindMatches(rules, b)
 	if err := ctx.Err(); err != nil {
-		return stats, nil, err
+		return ScanStats{}, nil, err
 	}
 	out := make([]ScanMatch, 0, len(matches))
 	for _, m := range matches {

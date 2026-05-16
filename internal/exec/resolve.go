@@ -29,8 +29,9 @@ func Resolve(ctx context.Context, argv []string, lookup LookupFunc) ([]string, e
 	resolved := make([]string, len(argv))
 	var failed []string
 	var firstErr error
+	tokenRe := detect.TokenRegexp()
 	for i, arg := range argv {
-		out := detect.TokenRegexp().ReplaceAllFunc([]byte(arg), func(m []byte) []byte {
+		out := tokenRe.ReplaceAllFunc([]byte(arg), func(m []byte) []byte {
 			if ctx.Err() != nil {
 				firstErr = ctx.Err()
 				failed = append(failed, string(m))

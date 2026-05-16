@@ -57,9 +57,6 @@ func newExec(opts *Options) *cobra.Command {
 			})
 			if err != nil {
 				printOrchestrateError(cmd, err)
-				if errors.Is(err, maskexec.ErrAuditUnwritable) {
-					return CodeError{Code: 125}
-				}
 				return CodeError{Code: 125}
 			}
 			if result.ExitCode != 0 {

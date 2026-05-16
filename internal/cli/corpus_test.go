@@ -57,40 +57,6 @@ func chdir(t *testing.T, dir string) {
 	t.Cleanup(func() { _ = os.Chdir(orig) })
 }
 
-func TestRewriteArgsCorpusUnchanged(t *testing.T) {
-	cases := [][]string{
-		{"corpus", "list"},
-		{"corpus", "add", "./fixture.txt", "--scenario", "x"},
-		{"corpus", "accept", "--all"},
-	}
-	for _, in := range cases {
-		got := RewriteArgs(append([]string(nil), in...))
-		if !equalSlices(got, in) {
-			t.Errorf("RewriteArgs(%v) = %v, want unchanged", in, got)
-		}
-	}
-}
-
-func TestRewriteArgsUnknownStillPrefixed(t *testing.T) {
-	got := RewriteArgs([]string{"unknown-command"})
-	want := []string{"mask", "unknown-command"}
-	if !equalSlices(got, want) {
-		t.Fatalf("got %v want %v", got, want)
-	}
-}
-
-func equalSlices(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
 func TestCorpusRootFromCLIPackage(t *testing.T) {
 	// The CLI test cwd is internal/cli; CorpusRoot must resolve to
 	// the same testdata/corpus as when called from internal/corpus.

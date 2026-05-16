@@ -22,7 +22,7 @@ func UnifiedDiff(expected, got []byte) string {
 	a := splitLines(expected)
 	b := splitLines(got)
 	ops := lcsDiff(a, b)
-	hunks := buildHunks(a, b, ops)
+	hunks := buildHunks(ops)
 	var sb strings.Builder
 	sb.WriteString("--- expected\n")
 	sb.WriteString("+++ got\n")
@@ -102,18 +102,17 @@ func lcsDiff(a, b []string) []op {
 
 // buildHunks groups ops into hunks separated by long runs of unchanged
 // lines, prepending the standard `@@ -start,len +start,len @@` header.
-func buildHunks(a, b []string, ops []op) []string {
+func buildHunks(ops []op) []string {
 	if len(ops) == 0 {
 		return nil
 	}
 	type pending struct {
-		ops          []op
-		oldStart     int // 1-based
-		oldLen       int
-		newStart     int
-		newLen       int
-		hasMutation  bool
-		precedingCtx int
+		ops         []op
+		oldStart    int // 1-based
+		oldLen      int
+		newStart    int
+		newLen      int
+		hasMutation bool
 	}
 
 	var hunks []string
@@ -212,7 +211,5 @@ func buildHunks(a, b []string, ops []op) []string {
 		}
 	}
 	flush()
-	_ = a
-	_ = b
 	return hunks
 }

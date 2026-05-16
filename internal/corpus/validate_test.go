@@ -62,12 +62,3 @@ func TestScenarioPathContainment(t *testing.T) {
 	}
 }
 
-func TestScenarioPathRejectsEscape(t *testing.T) {
-	root := t.TempDir()
-	bad := []string{"..", "../foo", "foo/bar", "FOO", ""}
-	for _, n := range bad {
-		if _, err := ScenarioPath(root, n); err == nil {
-			t.Errorf("expected error for %q, got nil", n)
-		}
-	}
-}

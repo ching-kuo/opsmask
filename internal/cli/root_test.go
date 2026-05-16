@@ -13,6 +13,7 @@ func TestRewriteArgs(t *testing.T) {
 	}{
 		{"empty", nil, []string{"mask"}},
 		{"subcommand", []string{"mask", "-"}, []string{"mask", "-"}},
+		{"corpus subcommand", []string{"corpus", "list"}, []string{"corpus", "list"}},
 		{"global then subcommand", []string{"--mapping", "m.sqlite", "mask", "-"}, []string{"--mapping", "m.sqlite", "mask", "-"}},
 		{"global then file", []string{"--verbose", "log.txt"}, []string{"mask", "--verbose", "log.txt"}},
 		{"dash file", []string{"-"}, []string{"mask", "-"}},
