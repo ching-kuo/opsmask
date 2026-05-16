@@ -1,9 +1,27 @@
+# Build artifacts
 /bin/
+
+# Local state directories
 /.omx/
 /.opsmask/
+/.llm-mask/
 /.code-review-graph/
+
+# Per-tool / editor configs (contain local absolute paths)
+/.claude/
+/.gemini/
+/.qoder/
+/.vscode/
+/.mcp.json
+/.opencode.json
+
+# Project memory / internal notes (not for public repo)
+/CLAUDE.md
+/docs/competitive-analysis.md
+
+# Databases
 *.sqlite
 *.sqlite-*
+
+# OS metadata
 .DS_Store
-# Added by code-review-graph
-.code-review-graph/
