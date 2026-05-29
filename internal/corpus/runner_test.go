@@ -43,7 +43,12 @@ func TestRunMaskCanonicalIsSeedIndependent(t *testing.T) {
 }
 
 func TestRunMaskCleansTempDir(t *testing.T) {
-	// Snapshot opsmask-corpus-* entries in TempDir before and after.
+	// Isolate TMPDIR so the count sees only temp dirs created by THIS test's
+	// RunMask call. `go test ./...` runs the internal/cli corpus tests (which
+	// also call RunMask) concurrently in a separate binary; without isolation
+	// their in-flight opsmask-corpus-* dirs in the shared TempDir race this
+	// count. Snapshot opsmask-corpus-* entries in TempDir before and after.
+	t.Setenv("TMPDIR", t.TempDir())
 	before := countCorpusTempDirs(t)
 	if _, err := RunMask(context.Background(), []byte("hello\n")); err != nil {
 		t.Fatalf("RunMask: %v", err)
@@ -81,6 +86,8 @@ func TestRunMaskCancellation(t *testing.T) {
 // TestRunMaskCleansTempDirOnError verifies the deferred cleanup runs even
 // when engine.Process returns an error. Plan U2 explicitly requires this.
 func TestRunMaskCleansTempDirOnError(t *testing.T) {
+	// Isolate TMPDIR from concurrent RunMask callers; see TestRunMaskCleansTempDir.
+	t.Setenv("TMPDIR", t.TempDir())
 	before := countCorpusTempDirs(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

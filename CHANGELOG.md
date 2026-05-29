@@ -146,6 +146,12 @@
 
 ### Fixed
 
+- **Flaky corpus temp-dir tests under `go test ./...`.**
+  `TestRunMaskCleansTempDir`/`TestRunMaskCleansTempDirOnError` counted
+  `opsmask-corpus-*` entries in the shared `os.TempDir()`, which races the
+  `internal/cli` corpus tests (run concurrently in a separate binary) that
+  also call `RunMask`. Each test now isolates `TMPDIR` to a private dir so
+  the count only sees its own temp dirs. Test-only; no production change.
 - **Kubernetes resource detectors** (`k8snode`, `k8spod`, `k8snamespace`, ...)
   rebuilt with three precision fixes from integration testing:
   - Lowercase resource-name body (the noun verb stays case-insensitive).
