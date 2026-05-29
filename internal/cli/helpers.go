@@ -4,8 +4,8 @@ import (
 	"github.com/ching-kuo/opsmask/internal/runtime"
 )
 
-// runtimeEnv is the CLI-local alias for the shared runtime.Env. Other CLI
-// files reference this type and the buildRuntime helper; both forward to
+// runtimeEnv is the CLI-local alias for the shared runtime.Env. Sibling CLI
+// files build their runtime via the buildRuntime helper, which forwards to
 // internal/runtime so the MCP server can construct the same graph.
 type runtimeEnv = runtime.Env
 

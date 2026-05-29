@@ -7,7 +7,7 @@ import "testing"
 // contains `node` and the adjacent AGE column (`10h`, `5d`, `30m`, `1d2h`,
 // `2y190d`, `1.5s`) gets tokenized as a node name. Pattern matching is
 // structurally correct — `node   10h` is `noun + whitespace + name` — so the
-// rejection happens via the `notDurationToken` Check wired on every k8s*
+// rejection happens via the `validK8sName` Check wired on every k8s*
 // rule, not via tightening the regex.
 //
 // This test exercises the registered Rule (Regex + Check), not the bare

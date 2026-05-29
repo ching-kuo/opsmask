@@ -38,11 +38,21 @@ func TestMatchSkipList(t *testing.T) {
 	}
 }
 
-func TestSkipListDoesNotRestoreRemovedVerbs(t *testing.T) {
-	for _, verb := range SkipList() {
-		switch verb {
-		case "echo", "test", "[":
-			t.Fatalf("removed verb %q must not return to v0 skip-list", verb)
-		}
+// TestMatchNeverSkipsMaskingBypassVerbs guards a security invariant (R3): the
+// verbs echo, test, and [ must never be skip-listed, because skipping them
+// would let `echo $SECRET` (or `test ... && echo $secret`) bypass masking.
+// It asserts against Match -- the real skip decision -- so a regression that
+// adds any of these verbs to Match's switch is caught here.
+func TestMatchNeverSkipsMaskingBypassVerbs(t *testing.T) {
+	for _, command := range []string{
+		"echo $SECRET",
+		"test -n x",
+		"[ -n x ]",
+	} {
+		t.Run(command, func(t *testing.T) {
+			if skip, _ := Match(command); skip {
+				t.Fatalf("Match(%q) = skip; masking-bypass verb must never be skip-listed", command)
+			}
+		})
 	}
 }

@@ -16,9 +16,8 @@ const (
 )
 
 type Result struct {
-	ProjectToplevel string
-	SettingsPath    string
-	ShimPath        string
+	SettingsPath string
+	ShimPath     string
 }
 
 func InstallClaudeCode(projectToplevel, opsmaskPath string, mode Mode) (Result, error) {
@@ -66,7 +65,7 @@ func InstallClaudeCode(projectToplevel, opsmaskPath string, mode Mode) (Result, 
 		_ = os.Remove(shim)
 		return Result{}, fmt.Errorf("register install: %w", err)
 	}
-	return Result{ProjectToplevel: projectToplevel, SettingsPath: settings, ShimPath: shim}, nil
+	return Result{SettingsPath: settings, ShimPath: shim}, nil
 }
 
 func removeHookOrErr(path string) error {
@@ -115,7 +114,7 @@ func UninstallClaudeCode(projectToplevel string) (Result, error) {
 	if changed == "" {
 		return Result{}, fmt.Errorf("OpsMask Claude Code hook is not installed in this project")
 	}
-	return Result{ProjectToplevel: projectToplevel, SettingsPath: changed, ShimPath: shim}, nil
+	return Result{SettingsPath: changed, ShimPath: shim}, nil
 }
 
 func settingsPaths(projectToplevel string) []string {

@@ -2,6 +2,7 @@ package rules
 
 import (
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/ching-kuo/opsmask/internal/policy"
@@ -130,21 +131,21 @@ func TestGitleaksDerivedSecretRules(t *testing.T) {
 		{"JWT", fixtureJWTForRules()},
 		{"AWSAccessKey", "AKIAIOSFODNN7EXAMPLE"},
 		{"GitHubPAT", "ghp_" + "0123456789abcdefABCDEF0123456789abcd"},
-		{"GitHubFineGrainedPAT", "github_pat_" + repeat("a", 82)},
+		{"GitHubFineGrainedPAT", "github_pat_" + strings.Repeat("a", 82)},
 		{"GitLabPAT", "glpat-" + "0123456789abcdefghij"},
 		{"SlackBotToken", "xoxb-" + "123456789012-123456789012-abcdefghijklmnop"},
 		{"StripeAccessToken", "sk_live_" + "51HmvK2EpZ8qWnBxRzLcA0vYtJfNd"},
-		{"GCPAPIKey", "AIza" + repeat("a", 35)},
+		{"GCPAPIKey", "AIza" + strings.Repeat("a", 35)},
 		{"TwilioAPIKey", "SK" + "0123456789abcdef0123456789ABCDEF"},
-		{"PEMPrivateKey", "-----BEGIN PRIVATE KEY-----\n" + repeat("a", 80) + "\n-----END PRIVATE KEY-----"},
-		{"NPMAccessToken", "npm_" + repeat("a", 36)},
-		{"PyPIUploadToken", "pypi-AgEIcHlwaS5vcmc" + repeat("a", 60)},
-		{"SendGridAPIKey", "SG." + repeat("a", 22) + "." + repeat("b", 43)},
-		{"DigitalOceanPAT", "dop_v1_" + repeat("a", 64)},
-		{"DigitalOceanOAuth", "doo_v1_" + repeat("a", 64)},
-		{"DigitalOceanRefresh", "dor_v1_" + repeat("a", 64)},
-		{"LinearAPIKey", "lin_api_" + repeat("a", 40)},
-		{"PostmanAPIKey", "PMAK-" + repeat("a", 24) + "-" + repeat("b", 34)},
+		{"PEMPrivateKey", "-----BEGIN PRIVATE KEY-----\n" + strings.Repeat("a", 80) + "\n-----END PRIVATE KEY-----"},
+		{"NPMAccessToken", "npm_" + strings.Repeat("a", 36)},
+		{"PyPIUploadToken", "pypi-AgEIcHlwaS5vcmc" + strings.Repeat("a", 60)},
+		{"SendGridAPIKey", "SG." + strings.Repeat("a", 22) + "." + strings.Repeat("b", 43)},
+		{"DigitalOceanPAT", "dop_v1_" + strings.Repeat("a", 64)},
+		{"DigitalOceanOAuth", "doo_v1_" + strings.Repeat("a", 64)},
+		{"DigitalOceanRefresh", "dor_v1_" + strings.Repeat("a", 64)},
+		{"LinearAPIKey", "lin_api_" + strings.Repeat("a", 40)},
+		{"PostmanAPIKey", "PMAK-" + strings.Repeat("a", 24) + "-" + strings.Repeat("b", 34)},
 	} {
 		t.Run(tc.rule, func(t *testing.T) {
 			if !compile(t, tc.rule).MatchString(tc.input) {
@@ -215,12 +216,4 @@ func TestDestroyRulesAreRegisteredAsBuiltinSecretTypes(t *testing.T) {
 
 func fixtureJWTForRules() string {
 	return "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyXzkxMjM3IiwiaWF0IjoxNzQ2MDAwMDAwfQ.s9bF2qLk-7T0GhM3xJpW1aNcQ8YvR2zIeKwUHfVbTjA"
-}
-
-func repeat(s string, n int) string {
-	out := ""
-	for range n {
-		out += s
-	}
-	return out
 }

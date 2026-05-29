@@ -32,10 +32,11 @@ func UnifiedDiff(expected, got []byte) string {
 	return sb.String()
 }
 
-// splitLines breaks input on '\n' while preserving the trailing newline on
-// each line. A final unterminated line is emitted with a sentinel marker
-// so it shows in the diff output as "\ No newline at end of file" style
-// information by being kept distinct from terminated lines.
+// splitLines breaks input on '\n' via strings.SplitAfter, so each line keeps
+// its trailing '\n'. The empty trailing chunk produced by a terminating
+// newline is dropped; a final unterminated line is returned verbatim with no
+// trailing '\n'. (buildHunks renders such a line indistinguishably from a
+// terminated one by appending '\n', so there is no "\ No newline" marker.)
 func splitLines(in []byte) []string {
 	if len(in) == 0 {
 		return nil

@@ -222,12 +222,12 @@ func denyMatch(argv []string, cfg config.ExecConfig) string {
 			}
 		case "git":
 			for i := 1; i < len(argv); i++ {
-				la := strings.ToLower(argv[i])
+				la := lower[i]
 				if strings.HasPrefix(la, "--exec-path=") {
 					return "layer_b:git-exec-path"
 				}
 				if la == "-c" && i+1 < len(argv) {
-					v := strings.ToLower(argv[i+1])
+					v := lower[i+1]
 					if strings.HasPrefix(v, "alias.") && strings.Contains(v, "!") {
 						return "layer_b:git-alias-shell"
 					}

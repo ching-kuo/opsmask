@@ -99,6 +99,9 @@
   rules). Hoists the cached `detect.TokenRegexp()` out of the
   per-arg loop in `internal/exec.Resolve` and drops a redundant
   `tokenProbe` clamp in `engine.isStrictASCIIPrefix`.
+- **`exec.denyMatch` git case reuses the precomputed lowercased argv
+  slice** instead of recomputing `strings.ToLower` per argument, matching
+  every other dispatcher case in the deny matcher. No behavior change.
 
 ### Changed
 
@@ -131,6 +134,15 @@
 - **Shared exec orchestration** lives in `internal/exec.Orchestrate`.
   CLI `exec` and MCP `exec` go through the same code path; the MCP
   caller opts into the scope-open refusal via `RefuseScopeOpen: true`.
+- **Repository cleanup pass.** Removed dead code with no callers
+  (`cchook.FormatShimCommand`, the vestigial `cchook.SkipList` parallel
+  skip-list, and the write-only `install.Result.ProjectToplevel` field)
+  and single-sourced the regex caps in `config.rulesFromConfig` to the
+  existing `MaxRegexPatternSize`/`MaxRegexGroups` constants. The Claude
+  Code hook's masking-bypass invariant test (`echo`/`test`/`[` must never
+  be skip-listed) now asserts against the real `Match` decision point
+  instead of the deleted parallel list, so a regression in `Match` is
+  actually caught. No behavior change.
 
 ### Fixed
 

@@ -415,14 +415,14 @@ func rulesFromConfig(cfg Config) ([]detect.Rule, error) {
 		if !rr.Policy.Valid() {
 			return nil, fmt.Errorf("regex %s has invalid policy", rr.Name)
 		}
-		if len(rr.Pattern) > 512 {
-			return nil, fmt.Errorf("regex %s exceeds 512 bytes", rr.Name)
+		if len(rr.Pattern) > MaxRegexPatternSize {
+			return nil, fmt.Errorf("regex %s exceeds %d bytes", rr.Name, MaxRegexPatternSize)
 		}
 		re, err := regexp.Compile(rr.Pattern)
 		if err != nil {
 			return nil, err
 		}
-		if re.NumSubexp() > 16 {
+		if re.NumSubexp() > MaxRegexGroups {
 			return nil, fmt.Errorf("regex %s has too many capture groups", rr.Name)
 		}
 		if secrets[rr.Type] && rr.Policy != policy.Destroy {

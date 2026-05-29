@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/ching-kuo/opsmask/internal/config"
-	maskexec "github.com/ching-kuo/opsmask/internal/exec"
 	"github.com/ching-kuo/opsmask/internal/mcpsrv"
 	mcpruntime "github.com/ching-kuo/opsmask/internal/runtime"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -145,7 +144,6 @@ func TestExecHappyPathWritesAudit(t *testing.T) {
 	if !strings.Contains(string(body), `"source":"mcp"`) {
 		t.Fatalf("audit log missing source=mcp: %s", body)
 	}
-	_ = maskexec.SourceMCP // keep import used
 }
 
 func TestExecRemasksOutput(t *testing.T) {

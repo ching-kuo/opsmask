@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strconv"
 
 	maskexec "github.com/ching-kuo/opsmask/internal/exec"
 	"github.com/ching-kuo/opsmask/internal/install"
@@ -138,8 +137,4 @@ func writeRefuse(out io.Writer, reason string) error {
 			"permissionDecisionReason": reason,
 		},
 	})
-}
-
-func FormatShimCommand(executable string) string {
-	return "command -v " + install.ShellQuote(executable) + " >/dev/null 2>&1 || { printf '%s\\n' " + strconv.Quote(`{"continue":false,"stopReason":"OpsMask binary is unavailable; reinstall or uninstall the OpsMask Claude Code hook."}`) + "; exit 0; }\nexec " + install.ShellQuote(executable) + " claude-code-hook\n"
 }
